@@ -1,0 +1,5 @@
+{
+  "name": "ICPC Live Scoreboard with Gemini Chat",
+  "description": "A web application that displays a real-time scoreboard for programming contests, similar to the ICPC. It also features an integrated Gemini-powered chatbot to answer user questions.",
+  "requestFramePermissions": []
+}
