@@ -1,9 +1,9 @@
 {
   "appTitle": "PAIC Live Scoreboard",
-  "headerTitle": "PAIC NLP Contest",
+  "headerTitle": "PAIC",
   "welcomeMessage": "Welcome",
   "logout": "Logout",
-  "loginPageTitle": "PAIC Contest",
+  "loginPageTitle": "PAIC",
   "loginPageSubtitle": "Select your role to continue",
   "roleContestant": "Contestant",
   "roleAdmin": "Admin",

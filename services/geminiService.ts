@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import type { Chat } from '@google/genai';
 import type { MutableRefObject } from 'react';
@@ -24,7 +23,7 @@ const initializeChat = (chatSessionRef: MutableRefObject<Chat | null>) => {
   chatSessionRef.current = genAI.chats.create({
     model: CHAT_MODEL_NAME,
     config: {
-        systemInstruction: "You are a helpful assistant for a Natural Language Processing (NLP) competition. Your name is Codey. You should be friendly and provide concise answers related to NLP concepts, machine learning models, Python libraries like PyTorch or TensorFlow, and general competition strategies. Do not provide direct solutions to the tasks.",
+        systemInstruction: "You are a helpful assistant for a programming competition. Your name is Codey. You should be friendly and provide concise answers related to programming concepts, machine learning models, Python libraries like PyTorch or TensorFlow, and general competition strategies. Do not provide direct solutions to the tasks.",
     },
   });
 };
@@ -67,7 +66,7 @@ export const getAnalysisForTeam = async (team: Team, tasks: Task[]): Promise<str
         }).join('\n');
 
         const prompt = `
-            You are an expert programming contest coach providing analysis for a team in an NLP competition.
+            You are an expert programming contest coach providing analysis for a team in a programming competition.
             The team's performance data is provided below. Analyze their performance and provide structured, insightful feedback in Markdown format.
             Be encouraging but also provide concrete, actionable advice.
 

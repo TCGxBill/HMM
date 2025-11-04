@@ -1,9 +1,9 @@
 {
   "appTitle": "Bảng điểm trực tiếp PAIC",
-  "headerTitle": "Cuộc thi PAIC NLP",
+  "headerTitle": "PAIC",
   "welcomeMessage": "Chào mừng",
   "logout": "Đăng xuất",
-  "loginPageTitle": "Cuộc thi PAIC",
+  "loginPageTitle": "PAIC",
   "loginPageSubtitle": "Chọn vai trò của bạn để tiếp tục",
   "roleContestant": "Thí sinh",
   "roleAdmin": "Quản trị viên",
