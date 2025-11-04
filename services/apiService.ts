@@ -25,9 +25,24 @@ export const loginUser = async (username: string, password: string, role: 'admin
 };
 
 /**
- * Registers a new user by POSTing their data to the mock API.
+ * Registers a new user by POSTing their data to the mock API after checking for uniqueness.
  */
 export const registerUser = async (userData: Omit<User, 'id'>): Promise<User> => {
+    // 1. Fetch existing users to check for uniqueness
+    const [students, admins] = await Promise.all([getStudents(), getAdmins()]);
+    const allUsers = [...students, ...admins];
+
+    // 2. Check for username uniqueness
+    if (allUsers.some(user => user.username === userData.username)) {
+        throw new Error('Username already exists.');
+    }
+
+    // 3. Check for team name uniqueness for contestants
+    if (userData.role === 'contestant' && students.some(student => student.teamName === userData.teamName)) {
+        throw new Error('Team name is already taken.');
+    }
+    
+    // 4. If checks pass, proceed with registration
     const endpoint = userData.role === 'admin' ? '/admins' : '/students';
     
     const dataToSend: any = {
@@ -70,6 +85,18 @@ export const getStudents = async (): Promise<User[]> => {
 
 
 /**
+ * Fetches all admin records from the API.
+ */
+export const getAdmins = async (): Promise<User[]> => {
+    const response = await fetch(`${API_URL}/admins`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch admin data.');
+    }
+    return response.json();
+};
+
+
+/**
  * Updates a student's record (e.g., after a submission).
  */
 export const updateStudent = async (studentData: User): Promise<User> => {
@@ -93,3 +120,16 @@ export const updateStudent = async (studentData: User): Promise<User> => {
 
     return response.json();
 }
+
+/**
+ * Deletes a student record from the API.
+ */
+export const deleteStudent = async (studentId: string): Promise<void> => {
+    const response = await fetch(`${API_URL}/students/${studentId}`, {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to delete student data.');
+    }
+};

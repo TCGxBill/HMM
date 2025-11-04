@@ -61,8 +61,8 @@ export const LoginPage: React.FC = () => {
         setRegEmail('');
         setRegPassword('');
         setRegTeamName('');
-    } catch (error) {
-        setMessage({ text: 'Registration failed. Please try again.', type: 'error' });
+    } catch (error: any) {
+        setMessage({ text: error.message || 'Registration failed. An unknown error occurred.', type: 'error' });
     } finally {
         setIsLoading(false);
     }

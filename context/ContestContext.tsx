@@ -75,7 +75,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     } finally {
         setIsLoading(false);
     }
-  }, [addToast, reRankTeams]);
+  }, [addToast, reRankTeams, setTeams]);
 
   useEffect(() => {
     if (user) { // Only fetch data if user is logged in
@@ -84,7 +84,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         setIsLoading(false);
         setTeams([]); // Clear teams on logout
     }
-  }, [user, refreshData]);
+  }, [user, refreshData, setTeams]);
   
   const contestStats = useMemo(() => {
     let totalSubmissions = 0;
@@ -192,8 +192,26 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     setTeams(prev => reRankTeams(prev.map(t => t.id === updatedTeam.id ? updatedTeam : t)));
   };
   
-  const deleteTeam = (teamId: number) => {
-    addToast("To remove a team, please manage users in the API.", 'info');
+  const deleteTeam = async (teamId: number) => {
+    if (user?.role !== 'admin') {
+      addToast('Only admins can delete teams.', 'error');
+      return;
+    }
+    
+    const teamToDelete = teams.find(t => t.id === teamId);
+    if (!teamToDelete || !teamToDelete.apiUserId) {
+        addToast('Could not find team to delete.', 'error');
+        return;
+    }
+
+    try {
+        await apiService.deleteStudent(teamToDelete.apiUserId);
+        addToast(`Team "${teamToDelete.name}" has been deleted.`, 'success');
+        await refreshData(); // Refresh the list from the API
+    } catch (error) {
+        addToast('Failed to delete team.', 'error');
+        console.error('Error deleting team:', error);
+    }
   };
 
   const addTask = (taskName: string) => {

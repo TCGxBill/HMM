@@ -61,9 +61,11 @@ const TaskKeyManager: React.FC<{ task: Task }> = ({ task }) => {
 
 
 export const AdminPanel: React.FC = () => {
+    // FIX: Destructure addTask from useContest and reorganize for readability.
     const { 
         contestStatus, updateContestStatus, resetContest,
-        teams, tasks, updateTeam, deleteTask, addTask, updateTask
+        teams, addTeam, updateTeam, deleteTeam,
+        tasks, addTask, updateTask, deleteTask
     } = useContest();
     const { addToast } = useToast();
 
@@ -82,6 +84,12 @@ export const AdminPanel: React.FC = () => {
     const handleResetContest = () => {
         if (window.confirm('Are you sure you want to reset the contest? This will reset tasks, status, and keys, and reload scoreboard data from the API.')) {
             resetContest();
+        }
+    };
+    
+    const handleDeleteTeam = (team: Team) => {
+        if (window.confirm(`Are you sure you want to delete the team "${team.name}"? This action cannot be undone.`)) {
+            deleteTeam(team.id);
         }
     };
 
@@ -126,13 +134,14 @@ export const AdminPanel: React.FC = () => {
             {/* Team Management - Readonly */}
              <div className="bg-contest-dark p-4 rounded-lg">
                 <h3 className="text-xl font-semibold text-white mb-3">Manage Teams</h3>
-                <p className="text-sm text-gray-400 mb-3">Teams are now managed through user registration. You can edit team names here.</p>
+                <p className="text-sm text-gray-400 mb-3">Teams are now managed through user registration. You can edit team names or delete teams here.</p>
                 <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
                     {teams.map(team => (
                         <li key={team.id} className="flex items-center justify-between bg-contest-dark-light p-2 rounded">
                             <span className="text-white">{team.name}</span>
                             <div className="space-x-2">
                                 <button onClick={() => setEditingTeam(team)} className="text-contest-yellow hover:text-yellow-300"><EditIcon className="w-5 h-5"/></button>
+                                <button onClick={() => handleDeleteTeam(team)} className="text-contest-red hover:text-red-400"><DeleteIcon className="w-5 h-5"/></button>
                             </div>
                         </li>
                     ))}

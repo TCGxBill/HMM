@@ -42,20 +42,20 @@ export const parseMasterKey = (masterKeyCsv: string): { [taskId: string]: string
 
 /**
  * Parses a CSV for a single task's answer key.
- * Expects format: id,prediction
+ * Expects format: category_id,content,overall_band_score
  */
 export const parseTaskKey = (csvString: string): string[][] => {
     const rows = parseCSV(csvString);
     if (rows.length === 0) {
         throw new Error("Task key file is empty or invalid.");
     }
-    // Skip header row if it exists (e.g., 'id,prediction')
-    const startIndex = rows[0][0].toLowerCase() === 'id' ? 1 : 0;
+    // Skip header row if it exists (e.g., 'category_id,content,overall_band_score')
+    const startIndex = rows[0][0].toLowerCase() === 'category_id' ? 1 : 0;
     
     const dataRows = rows.slice(startIndex);
 
-    if (dataRows.some(row => row.length < 2)) {
-        throw new Error("Some rows in the task key file are malformed. Expected 'id,prediction'.");
+    if (dataRows.some(row => row.length < 3)) {
+        throw new Error("Some rows in the task key file are malformed. Expected 'category_id,content,overall_band_score'.");
     }
 
     return dataRows;
@@ -76,7 +76,7 @@ export const calculateScore = (submissionCsv: string, answerKeyData: string[][])
     }
 
     // Skip header row for comparison if present
-    const subStartIndex = submissionData[0][0].toLowerCase() === 'id' ? 1 : 0;
+    const subStartIndex = submissionData[0][0].toLowerCase() === 'category_id' ? 1 : 0;
     const actualSubData = submissionData.slice(subStartIndex);
 
     if (actualSubData.length !== answerKeyData.length) {
@@ -85,15 +85,15 @@ export const calculateScore = (submissionCsv: string, answerKeyData: string[][])
 
     let correctPredictions = 0;
     
-    // Assumes the format is [ID, Prediction] for both files.
+    // Assumes the format is [category_id, content, overall_band_score] for both files.
     for (let i = 0; i < answerKeyData.length; i++) {
         const submissionRow = actualSubData[i];
         const answerRow = answerKeyData[i];
 
-        if (!submissionRow || !answerRow || submissionRow.length < 2 || answerRow.length < 2) continue;
+        if (!submissionRow || !answerRow || submissionRow.length < 3 || answerRow.length < 3) continue;
 
-        // Compare the prediction column (index 1)
-        if (submissionRow[1] === answerRow[1]) {
+        // Compare the overall_band_score column (index 2)
+        if (submissionRow[2] === answerRow[2]) {
             correctPredictions++;
         }
     }
