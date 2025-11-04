@@ -13,6 +13,7 @@ const parseCSV = (csvString: string): string[][] => {
  * Expects format: taskId,id,prediction
  * @param masterKeyCsv The master answer key file content.
  * @returns An object where keys are taskIds and values are the answer data for that task.
+ * @deprecated This function is for a single master key file. Use parseTaskKey for individual files.
  */
 export const parseMasterKey = (masterKeyCsv: string): { [taskId: string]: string[][] } => {
     const rows = parseCSV(masterKeyCsv);
@@ -38,6 +39,27 @@ export const parseMasterKey = (masterKeyCsv: string): { [taskId: string]: string
 
     return keyMap;
 }
+
+/**
+ * Parses a CSV for a single task's answer key.
+ * Expects format: id,prediction
+ */
+export const parseTaskKey = (csvString: string): string[][] => {
+    const rows = parseCSV(csvString);
+    if (rows.length === 0) {
+        throw new Error("Task key file is empty or invalid.");
+    }
+    // Skip header row if it exists (e.g., 'id,prediction')
+    const startIndex = rows[0][0].toLowerCase() === 'id' ? 1 : 0;
+    
+    const dataRows = rows.slice(startIndex);
+
+    if (dataRows.some(row => row.length < 2)) {
+        throw new Error("Some rows in the task key file are malformed. Expected 'id,prediction'.");
+    }
+
+    return dataRows;
+};
 
 
 /**

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Team, Task } from '../types';
 import { useContest } from '../context/ContestContext';
@@ -16,7 +15,7 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({ team, onClose 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 font-sans" onClick={onClose}>
-      <div className="bg-contest-dark-light rounded-lg shadow-2xl p-6 w-full max-w-2xl mx-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-contest-dark-light rounded-xl shadow-2xl p-6 w-full max-w-2xl mx-4" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-white">{team.name} - Details</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
@@ -41,7 +40,7 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({ team, onClose 
             <h3 className="text-xl font-semibold text-white mb-3">Submissions</h3>
             <div className="overflow-x-auto">
                 <table className="min-w-full text-sm text-left text-gray-300">
-                    <thead className="text-xs text-white uppercase bg-gray-800">
+                    <thead className="text-xs text-white uppercase bg-gray-900/50">
                         <tr>
                             <th scope="col" className="py-3 px-6">Task</th>
                             <th scope="col" className="py-3 px-4 text-center">Score</th>
@@ -62,7 +61,7 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({ team, onClose 
                                     <td className="py-3 px-6 font-semibold">{task.name}</td>
                                     <td className="py-3 px-4 text-center">{submission?.score?.toFixed(1) ?? '-'}</td>
                                     <td className="py-3 px-4 text-center">{submission?.attempts ?? 0}</td>
-                                    <td className={`py-3 px-4 text-center font-bold ${submission?.score === bestScore && bestScore !== null ? 'text-green-400' : 'text-gray-500'}`}>
+                                    <td className={`py-3 px-4 text-center font-bold ${submission?.score === bestScore && bestScore !== null ? 'text-contest-green' : 'text-gray-500'}`}>
                                         {submission?.score === bestScore && bestScore !== null ? 'Yes' : 'No'}
                                     </td>
                                 </tr>

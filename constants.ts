@@ -3,8 +3,11 @@ import { Team, Task } from './types';
 export const mockTasks: Task[] = Array.from({ length: 8 }, (_, i) => ({
   id: `T${i + 1}`,
   name: `Task ${String.fromCharCode(65 + i)}`,
+  keyVisibility: 'private',
+  keyUploaded: false,
 }));
 
+// This mock data is now only a fallback if the API fails.
 export const mockTeams: Team[] = [
   {
     id: 1,

@@ -1,20 +1,26 @@
-
-import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
 import usePersistentState from '../hooks/usePersistentState';
-import { Team, Task, Submission, ContestStatus } from '../types';
+import { Team, Task, Submission, ContestStatus, User } from '../types';
 import { mockTeams, mockTasks } from '../constants';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
-import { calculateScore, parseMasterKey } from '../services/scoringService';
+import { calculateScore, parseTaskKey } from '../services/scoringService';
+import * as apiService from '../services/apiService';
 
 interface ContestContextType {
   teams: Team[];
   tasks: Task[];
   contestStatus: ContestStatus;
   masterKey: { [taskId: string]: string[][] } | null;
+  contestStats: {
+    totalSubmissions: number;
+    highestScore: number;
+    avgAttempts: number;
+  };
+  isLoading: boolean;
   submitSolution: (taskId: string, submissionContent: string) => Promise<void>;
   updateContestStatus: (newStatus: ContestStatus) => void;
-  setMasterKey: (keyContent: string) => void;
+  setTaskKey: (taskId: string, keyContent: string) => void;
   addTeam: (teamName: string) => void;
   updateTeam: (team: Team) => void;
   deleteTeam: (teamId: number) => void;
@@ -22,15 +28,17 @@ interface ContestContextType {
   updateTask: (task: Task) => void;
   deleteTask: (taskId: string) => void;
   resetContest: () => void;
+  refreshData: () => void;
 }
 
 const ContestContext = createContext<ContestContextType | undefined>(undefined);
 
 export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [teams, setTeams] = usePersistentState<Team[]>('teams', mockTeams);
+  const [teams, setTeams] = usePersistentState<Team[]>('teams', []);
   const [tasks, setTasks] = usePersistentState<Task[]>('tasks', mockTasks);
   const [contestStatus, setContestStatus] = usePersistentState<ContestStatus>('contestStatus', 'Live');
   const [masterKey, setMasterKey] = usePersistentState<{ [taskId: string]: string[][] } | null>('masterKey', null);
+  const [isLoading, setIsLoading] = useState(true);
   
   const { user } = useAuth();
   const { addToast } = useToast();
@@ -41,8 +49,71 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       .map((team, index) => ({ ...team, rank: index + 1 }));
   }, []);
 
+  const transformUserDataToTeams = (users: User[]): Team[] => {
+    const teamsData = users.map((u, index) => ({
+      id: index + 1, // Internal ID
+      apiUserId: u.id,
+      rank: 0, // Will be calculated later
+      name: u.teamName,
+      solved: (u.submissions ?? []).filter(s => s.score !== null && s.score > 0).length,
+      totalScore: u.bestScore ?? 0,
+      submissions: (u.submissions ?? []),
+    }));
+    return reRankTeams(teamsData);
+  };
+  
+  const refreshData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+        const students = await apiService.getStudents();
+        const teamsData = transformUserDataToTeams(students);
+        setTeams(teamsData);
+    } catch (error) {
+        console.error("Failed to load scoreboard data", error);
+        addToast("Could not load scoreboard data from API.", 'error');
+        setTeams(reRankTeams(mockTeams)); // Fallback to mock data
+    } finally {
+        setIsLoading(false);
+    }
+  }, [addToast, reRankTeams]);
+
+  useEffect(() => {
+    if (user) { // Only fetch data if user is logged in
+        refreshData();
+    } else {
+        setIsLoading(false);
+        setTeams([]); // Clear teams on logout
+    }
+  }, [user, refreshData]);
+  
+  const contestStats = useMemo(() => {
+    let totalSubmissions = 0;
+    let highestScore = 0;
+    let totalAttemptsOnSuccessfullySolvedTasks = 0;
+    let countOfSuccessfullySolvedTasks = 0;
+
+    teams.forEach(team => {
+        team.submissions.forEach(sub => {
+            totalSubmissions += sub.attempts;
+            if(sub.score !== null) {
+                if(sub.score > highestScore) {
+                    highestScore = sub.score;
+                }
+                if(sub.score > 0) {
+                    countOfSuccessfullySolvedTasks++;
+                    totalAttemptsOnSuccessfullySolvedTasks += sub.attempts;
+                }
+            }
+        });
+    });
+
+    const avgAttempts = countOfSuccessfullySolvedTasks > 0 ? totalAttemptsOnSuccessfullySolvedTasks / countOfSuccessfullySolvedTasks : 0;
+    
+    return { totalSubmissions, highestScore, avgAttempts };
+  }, [teams]);
+
   const submitSolution = useCallback(async (taskId: string, submissionContent: string) => {
-    if (!user || user.role !== 'contestant' || !user.teamId) {
+    if (!user || user.role !== 'contestant' || !user.teamName) {
       addToast('You must be a logged-in contestant to submit.', 'error');
       return;
     }
@@ -50,72 +121,44 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       addToast(`Submissions are closed. Contest status: ${contestStatus}`, 'error');
       return;
     }
-    if (!masterKey) {
-        addToast('The master answer key has not been set by the admin.', 'error');
-        return;
-    }
-    if (!masterKey[taskId]) {
-        addToast(`No answer key found for task ${taskId}.`, 'error');
+    if (!masterKey || !masterKey[taskId]) {
+        addToast(`The answer key for task ${taskId} has not been set.`, 'error');
         return;
     }
 
     try {
         const score = calculateScore(submissionContent, masterKey[taskId]);
         addToast(`Submission for ${taskId} received! Score: ${score.toFixed(1)}`, 'success');
+        
+        // Find the user's current data from API to update
+        const studentToUpdate = await apiService.getStudents().then(students => students.find(s => s.id === user.id));
 
-        setTeams(prevTeams => {
-            const newTeams = prevTeams.map(team => {
-                if (team.id === user.teamId) {
-                    let submission = team.submissions.find(s => s.taskId === taskId);
-                    
-                    if (submission) {
-                        submission.attempts += 1;
-                        if (submission.score === null || score > submission.score) {
-                          submission.score = score;
-                        }
-                    } else {
-                        submission = { taskId, score, attempts: 1, isBestScore: false }; // isBestScore will be updated below
-                        team.submissions.push(submission);
-                    }
-                    submission.recentlyUpdated = true; // For flash effect
+        if(!studentToUpdate) {
+            addToast('Could not find your record to update score.', 'error');
+            return;
+        }
 
-                    // Update isBestScore for all submissions for this team for this task
-                    const teamSubmissionsForTask = team.submissions.filter(s => s.taskId === taskId && s.score !== null);
-                    const bestScoreForTask = teamSubmissionsForTask.length > 0 ? Math.max(...teamSubmissionsForTask.map(s => s.score!)) : -1;
-                    
-                    team.submissions.forEach(s => {
-                        if (s.taskId === taskId) {
-                            s.isBestScore = s.score !== null && s.score === bestScoreForTask;
-                        }
-                    });
+        let submission = (studentToUpdate.submissions ?? []).find(s => s.taskId === taskId);
+        if (submission) {
+            submission.attempts += 1;
+            if (submission.score === null || score > submission.score) {
+              submission.score = score;
+            }
+        } else {
+            submission = { taskId, score, attempts: 1, isBestScore: false };
+            studentToUpdate.submissions = [...(studentToUpdate.submissions ?? []), submission];
+        }
 
-                    // Recalculate total score based on best scores for each task
-                    const bestScores = tasks.map(task => {
-                        const bestSubmissionForTask = team.submissions
-                            .filter(s => s.taskId === task.id && s.isBestScore);
-                        return bestSubmissionForTask[0]?.score ?? 0;
-                    });
-                    
-                    team.totalScore = bestScores.reduce((acc, s) => acc + s, 0);
-                    team.solved = bestScores.filter(s => s > 0).length;
-                }
-                return team;
-            });
-            return reRankTeams(newTeams);
-        });
+        const bestScore = Math.max(...(studentToUpdate.submissions ?? []).map(s => s.score ?? 0));
+        studentToUpdate.bestScore = bestScore;
 
-        // Remove flash effect after a delay
-        setTimeout(() => {
-            setTeams(currentTeams => currentTeams.map(t => ({
-                ...t,
-                submissions: t.submissions.map(s => ({ ...s, recentlyUpdated: false }))
-            })));
-        }, 2000);
+        await apiService.updateStudent(studentToUpdate);
+        await refreshData(); // Refresh all data from source of truth
 
     } catch (error: any) {
         addToast(error.message, 'error');
     }
-  }, [user, contestStatus, masterKey, setTeams, addToast, reRankTeams, tasks]);
+  }, [user, contestStatus, masterKey, addToast, refreshData]);
   
   const updateContestStatus = (newStatus: ContestStatus) => {
     if (user?.role !== 'admin') {
@@ -126,32 +169,23 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     addToast(`Contest status updated to ${newStatus}`, 'info');
   };
 
-  const setMasterKeyAction = (keyContent: string) => {
+  const setTaskKey = (taskId: string, keyContent: string) => {
     if (user?.role !== 'admin') {
-      addToast('Only admins can upload the master key.', 'error');
+      addToast('Only admins can upload answer keys.', 'error');
       return;
     }
     try {
-      const parsedKey = parseMasterKey(keyContent);
-      setMasterKey(parsedKey);
-      addToast('Master answer key uploaded successfully!', 'success');
+      const parsedKey = parseTaskKey(keyContent);
+      setMasterKey(prev => ({ ...prev, [taskId]: parsedKey }));
+      setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? {...t, keyUploaded: true} : t));
+      addToast(`Answer key for ${taskId} uploaded successfully!`, 'success');
     } catch (error: any) {
-      addToast(`Error parsing master key: ${error.message}`, 'error');
+      addToast(`Error parsing key for ${taskId}: ${error.message}`, 'error');
     }
   };
 
   const addTeam = (teamName: string) => {
-    setTeams(prev => {
-        const newTeam: Team = {
-            id: prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1,
-            name: teamName,
-            rank: prev.length + 1,
-            solved: 0,
-            totalScore: 0,
-            submissions: tasks.map(task => ({ taskId: task.id, score: null, attempts: 0, isBestScore: false })),
-        };
-        return reRankTeams([...prev, newTeam]);
-    });
+    addToast("Teams are now added via contestant registration.", 'info');
   };
 
   const updateTeam = (updatedTeam: Team) => {
@@ -159,18 +193,14 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
   
   const deleteTeam = (teamId: number) => {
-    setTeams(prev => reRankTeams(prev.filter(t => t.id !== teamId)));
+    addToast("To remove a team, please manage users in the API.", 'info');
   };
 
   const addTask = (taskName: string) => {
     const newId = `T${tasks.length + 1}`;
-    const newTask: Task = { id: newId, name: taskName };
+    const newTask: Task = { id: newId, name: taskName, keyVisibility: 'private', keyUploaded: false };
     setTasks(prev => [...prev, newTask]);
-    // Also add empty submissions for this task to all teams
-    setTeams(prev => prev.map(team => ({
-        ...team,
-        submissions: [...team.submissions, { taskId: newId, score: null, attempts: 0, isBestScore: false }]
-    })));
+    // Note: this doesn't add empty submissions to API data automatically
   };
 
   const updateTask = (updatedTask: Task) => {
@@ -179,19 +209,21 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   
   const deleteTask = (taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
-    // Also remove submissions for this task from all teams
-    setTeams(prev => prev.map(team => ({
-        ...team,
-        submissions: team.submissions.filter(s => s.taskId !== taskId)
-    })));
+    setMasterKey(prev => {
+        if (!prev) return null;
+        const newKey = {...prev};
+        delete newKey[taskId];
+        return newKey;
+    });
   };
 
   const resetContest = () => {
-    setTeams(mockTeams);
+    // This now only resets local non-API state
     setTasks(mockTasks);
     setContestStatus('Live');
     setMasterKey(null);
-    addToast('Contest has been reset to its initial state.', 'info');
+    addToast('Local contest state (tasks, status, keys) has been reset.', 'info');
+    refreshData();
   };
 
   return (
@@ -200,9 +232,11 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       tasks,
       contestStatus,
       masterKey,
+      contestStats,
+      isLoading,
       submitSolution,
       updateContestStatus,
-      setMasterKey: setMasterKeyAction,
+      setTaskKey,
       addTeam,
       updateTeam,
       deleteTeam,
@@ -210,6 +244,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       updateTask,
       deleteTask,
       resetContest,
+      refreshData,
     }}>
       {children}
     </ContestContext.Provider>

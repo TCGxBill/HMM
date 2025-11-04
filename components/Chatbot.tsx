@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { getBotResponse } from '../services/geminiService';
 import { ChatMessage } from '../types';
@@ -48,21 +47,21 @@ export const Chatbot: React.FC = () => {
     <>
       <button
         onClick={toggleChat}
-        className="fixed bottom-6 right-6 bg-contest-blue text-white p-4 rounded-full shadow-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-110"
+        className="fixed bottom-6 right-6 bg-contest-primary text-white p-4 rounded-full shadow-lg hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-transform transform hover:scale-110"
         aria-label="Toggle Chat"
       >
         {isOpen ? <CloseIcon className="h-6 w-6" /> : <ChatIcon className="h-6 w-6" />}
       </button>
 
       {isOpen && (
-        <div className="fixed bottom-24 right-6 w-full max-w-sm h-[60vh] bg-contest-dark-light rounded-lg shadow-2xl flex flex-col transition-all duration-300 ease-in-out">
-          <div className="bg-gray-800 p-4 text-white font-bold rounded-t-lg">
+        <div className="fixed bottom-24 right-6 w-full max-w-sm h-[60vh] bg-contest-dark-light rounded-xl shadow-2xl flex flex-col transition-all duration-300 ease-in-out">
+          <div className="bg-gray-900/50 p-4 text-white font-bold rounded-t-xl">
             Gemini Assistant
           </div>
           <div ref={chatContainerRef} className="flex-1 p-4 overflow-y-auto space-y-4">
             {messages.map((msg, index) => (
               <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-3 rounded-lg ${msg.sender === 'user' ? 'bg-contest-blue text-white' : 'bg-contest-gray text-white'}`}>
+                <div className={`max-w-[80%] p-3 rounded-lg ${msg.sender === 'user' ? 'bg-contest-primary text-white' : 'bg-contest-gray text-white'}`}>
                   <p className="text-sm">{msg.text}</p>
                 </div>
               </div>
@@ -87,13 +86,13 @@ export const Chatbot: React.FC = () => {
                 onChange={(e) => setUserInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                 placeholder="Ask something..."
-                className="flex-1 bg-contest-dark border border-contest-gray rounded-full px-4 py-2 text-white placeholder-contest-light-gray focus:outline-none focus:ring-2 focus:ring-contest-blue"
+                className="flex-1 bg-contest-dark border border-contest-gray rounded-full px-4 py-2 text-white placeholder-contest-light-gray focus:outline-none focus:ring-2 focus:ring-contest-primary"
                 disabled={isLoading}
               />
               <button
                 onClick={handleSendMessage}
                 disabled={isLoading || userInput.trim() === ''}
-                className="bg-contest-blue text-white p-2 rounded-full hover:bg-blue-600 disabled:bg-contest-gray disabled:cursor-not-allowed transition-colors"
+                className="bg-contest-primary text-white p-2 rounded-full hover:bg-indigo-500 disabled:bg-contest-gray disabled:cursor-not-allowed transition-colors"
                 aria-label="Send Message"
               >
                 <SendIcon className="h-5 w-5"/>

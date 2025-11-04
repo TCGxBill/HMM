@@ -14,11 +14,15 @@ export interface Team {
   solved: number;
   totalScore: number;
   submissions: Submission[];
+  // This will hold the original API user ID for updates
+  apiUserId?: string; 
 }
 
 export interface Task {
   id: string;
   name: string;
+  keyVisibility: 'public' | 'private';
+  keyUploaded: boolean;
 }
 
 export interface ChatMessage {
@@ -27,9 +31,15 @@ export interface ChatMessage {
 }
 
 export interface User {
+  id: string;
   username: string;
+  email: string;
+  password?: string; // Optional because we don't store it in the context after login
   role: 'admin' | 'contestant';
-  teamId: number | null;
+  teamName: string;
+  // Properties from student API record
+  bestScore?: number;
+  submissions?: Submission[];
 }
 
 export type ToastType = 'success' | 'error' | 'info';

@@ -10,9 +10,9 @@ interface ToastProps {
 export const Toast: React.FC<ToastProps> = ({ message, onDismiss }) => {
   const baseClasses = "relative flex items-center p-4 text-white rounded-lg shadow-lg max-w-sm";
   const typeClasses = {
-    success: 'bg-green-500',
-    error: 'bg-red-500',
-    info: 'bg-blue-500',
+    success: 'bg-contest-green',
+    error: 'bg-contest-red',
+    info: 'bg-contest-primary',
   };
 
   return (

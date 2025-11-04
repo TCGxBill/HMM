@@ -13,15 +13,15 @@ export const ScoreChart: React.FC<ScoreChartProps> = ({ teams }) => {
   const maxScore = topTeams.length > 0 ? Math.max(...topTeams.map(t => t.totalScore), 100) : 100;
 
   const colorPalette = [
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-yellow-500',
-    'bg-purple-500',
-    'bg-red-500',
+    'bg-contest-primary',
+    'bg-contest-secondary',
+    'bg-contest-green',
+    'bg-contest-yellow',
+    'bg-contest-red',
   ];
 
   return (
-    <div className="bg-contest-dark-light p-6 rounded-lg shadow-2xl mt-8">
+    <div className="bg-contest-dark-light p-6 rounded-xl shadow-2xl mt-8">
       <h2 className="text-xl font-bold text-white mb-6 text-center">Top 5 Teams</h2>
       <div className="space-y-4">
         {topTeams.map((team, index) => (

@@ -47,13 +47,13 @@ export const SubmissionPanel: React.FC = () => {
 
   const dropzoneClasses = useMemo(() => {
     const base = "border-2 border-dashed border-contest-gray rounded-lg p-8 text-center cursor-pointer transition-colors";
-    return isDragActive ? `${base} bg-contest-blue/20 border-contest-blue` : `${base} hover:border-gray-400`;
+    return isDragActive ? `${base} bg-contest-primary/20 border-contest-primary` : `${base} hover:border-gray-400`;
   }, [isDragActive]);
 
   const isSubmissionDisabled = isLoading || !file || !selectedTask || contestStatus !== 'Live';
 
   return (
-    <div className="bg-contest-dark-light p-6 rounded-lg shadow-2xl max-w-2xl mx-auto my-8">
+    <div className="bg-contest-dark-light p-6 rounded-xl shadow-2xl max-w-2xl mx-auto my-8">
       <h2 className="text-2xl font-bold text-white mb-4">Submit Your Solution</h2>
       <div className="space-y-4">
         <div>
@@ -64,7 +64,7 @@ export const SubmissionPanel: React.FC = () => {
             id="task-select"
             value={selectedTask}
             onChange={(e) => setSelectedTask(e.target.value)}
-            className="w-full bg-contest-dark border border-contest-gray rounded-md p-2 text-white focus:outline-none focus:ring-2 focus:ring-contest-blue"
+            className="w-full bg-contest-dark border border-contest-gray rounded-md p-2 text-white focus:outline-none focus:ring-2 focus:ring-contest-primary"
           >
             {tasks.map(task => (
               <option key={task.id} value={task.id}>{task.name}</option>
@@ -78,7 +78,7 @@ export const SubmissionPanel: React.FC = () => {
           {file ? (
             <p className="mt-2 text-white">{file.name}</p>
           ) : isDragActive ? (
-            <p className="mt-2 text-contest-blue">Drop the file here ...</p>
+            <p className="mt-2 text-contest-primary">Drop the file here ...</p>
           ) : (
             <p className="mt-2 text-gray-400">Drag & drop a .csv file here, or click to select a file</p>
           )}
@@ -87,7 +87,7 @@ export const SubmissionPanel: React.FC = () => {
         <button
           onClick={handleSubmit}
           disabled={isSubmissionDisabled}
-          className="w-full p-3 bg-contest-blue text-white font-bold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-contest-dark-light focus:ring-blue-500 disabled:bg-contest-gray disabled:cursor-not-allowed"
+          className="w-full p-3 bg-contest-primary text-white font-bold rounded-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-contest-dark-light focus:ring-indigo-500 disabled:bg-contest-gray disabled:cursor-not-allowed transition-colors"
         >
           {contestStatus !== 'Live' 
             ? `Submissions are closed (${contestStatus})`
