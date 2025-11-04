@@ -3,12 +3,14 @@ import { useDropzone } from 'react-dropzone';
 import { useContest } from '../context/ContestContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../context/LanguageContext';
 import { UploadIcon, ChevronDownIcon, ChevronUpIcon } from './Icons';
 
 export const SubmissionPanel: React.FC = () => {
   const { user } = useAuth();
   const { teams, tasks, submitSolution, contestStatus } = useContest();
   const { addToast } = useToast();
+  const { t } = useTranslation();
   const [selectedTask, setSelectedTask] = useState<string>(tasks[0]?.id || '');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,7 +42,7 @@ export const SubmissionPanel: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!selectedTask || !file || !fileContent) {
-      addToast('Please select a task and a file.', 'error');
+      addToast(t('error.selectTaskAndFile'), 'error');
       return;
     }
 
@@ -69,11 +71,11 @@ export const SubmissionPanel: React.FC = () => {
 
   return (
     <div className="bg-contest-dark-light p-6 rounded-xl shadow-2xl max-w-2xl mx-auto my-8">
-      <h2 className="text-2xl font-bold text-white mb-4">Submit Your Solution</h2>
+      <h2 className="text-2xl font-bold text-white mb-4">{t('submissionPanelTitle')}</h2>
       <div className="space-y-4">
         <div>
           <label htmlFor="task-select" className="block text-sm font-medium text-gray-300 mb-2">
-            Select Task
+            {t('selectTask')}
           </label>
           <select
             id="task-select"
@@ -93,9 +95,9 @@ export const SubmissionPanel: React.FC = () => {
           {file ? (
             <p className="mt-2 text-white">{file.name}</p>
           ) : isDragActive ? (
-            <p className="mt-2 text-contest-primary">Drop the file here ...</p>
+            <p className="mt-2 text-contest-primary">{t('dropzoneActive')}</p>
           ) : (
-            <p className="mt-2 text-gray-400">Drag & drop a .csv file here, or click to select a file</p>
+            <p className="mt-2 text-gray-400">{t('dropzoneDefault')}</p>
           )}
         </div>
 
@@ -105,16 +107,16 @@ export const SubmissionPanel: React.FC = () => {
           className="w-full p-3 bg-contest-primary text-white font-bold rounded-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-contest-dark-light focus:ring-indigo-500 disabled:bg-contest-gray disabled:cursor-not-allowed transition-colors"
         >
           {contestStatus !== 'Live' 
-            ? `Submissions are closed (${contestStatus})`
+            ? t('submissionsClosed', { status: t(`status${contestStatus.replace(' ','')}`) })
             : isLoading 
-              ? 'Submitting...' 
-              : 'Submit Solution'}
+              ? t('submitting')
+              : t('submitSolution')}
         </button>
       </div>
 
       {userSubmissions.length > 0 && (
           <div className="mt-8 pt-6 border-t border-contest-gray">
-              <h3 className="text-xl font-bold text-white mb-4">My Submission History</h3>
+              <h3 className="text-xl font-bold text-white mb-4">{t('mySubmissionHistory')}</h3>
               <ul className="space-y-3">
                   {tasks.map(task => {
                       const submission = userSubmissions.find(s => s.taskId === task.id);
@@ -128,9 +130,9 @@ export const SubmissionPanel: React.FC = () => {
                                   <div>
                                       <p className="font-semibold text-white">{task.name}</p>
                                       <p className="text-sm text-gray-400">
-                                          Best Score: <span className="font-bold text-contest-primary">{submission.score?.toFixed(1) ?? 'N/A'}</span>
+                                          {t('bestScore')}: <span className="font-bold text-contest-primary">{submission.score?.toFixed(1) ?? 'N/A'}</span>
                                           {' | '}
-                                          Attempts: <span className="font-bold text-contest-secondary">{submission.attempts}</span>
+                                          {t('attempts')}: <span className="font-bold text-contest-secondary">{submission.attempts}</span>
                                       </p>
                                   </div>
                                   {submission.history && submission.history.length > 0 && (
@@ -145,11 +147,11 @@ export const SubmissionPanel: React.FC = () => {
                               </div>
                               {isExpanded && submission.history && submission.history.length > 0 && (
                                   <div className="mt-4 pt-4 border-t border-contest-gray/50">
-                                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Attempts:</h4>
+                                      <h4 className="text-sm font-semibold text-gray-300 mb-2">{t('historyAttemptsTitle')}</h4>
                                       <ul className="space-y-2 max-h-40 overflow-y-auto pr-2">
                                           {[...submission.history].reverse().map((attempt, index) => (
                                               <li key={index} className="flex justify-between items-center text-sm bg-contest-dark-light p-2 rounded">
-                                                  <span className="text-gray-400">Attempt #{submission.history.length - index}</span>
+                                                  <span className="text-gray-400">{t('historyAttempt', { number: submission.history.length - index })}</span>
                                                   <span className={`font-semibold ${attempt.score === submission.score ? 'text-contest-green' : 'text-white'}`}>{attempt.score.toFixed(1)}</span>
                                                   <span className="text-xs text-gray-500">{new Date(attempt.timestamp).toLocaleString()}</span>
                                               </li>

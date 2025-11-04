@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Team } from '../types';
 import { getAnalysisForTeam } from '../services/geminiService';
 import { useContest } from '../context/ContestContext';
+import { useTranslation } from '../context/LanguageContext';
 import { CloseIcon, SparkleIcon } from './Icons';
 
 const renderMarkdown = (text: string) => {
@@ -18,6 +19,7 @@ interface AnalysisModalProps {
 
 export const AnalysisModal: React.FC<AnalysisModalProps> = ({ team, onClose }) => {
   const { tasks } = useContest();
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ team, onClose }) =
           const result = await getAnalysisForTeam(team, tasks);
           setAnalysis(result);
         } catch (err) {
-          setError("Failed to generate analysis. Please try again.");
+          setError(t('error.getAnalysis'));
           console.error(err);
         } finally {
           setIsLoading(false);
@@ -40,7 +42,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ team, onClose }) =
       };
       fetchAnalysis();
     }
-  }, [team, tasks]);
+  }, [team, tasks, t]);
 
   if (!team) return null;
 
@@ -50,7 +52,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ team, onClose }) =
         <div className="flex justify-between items-center mb-4 pb-4 border-b border-contest-gray flex-shrink-0">
           <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
             <SparkleIcon className="w-6 h-6 text-contest-secondary" />
-            <span>Performance Analysis for {team.name}</span>
+            <span>{t('analysisTitle', { teamName: team.name })}</span>
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
             <CloseIcon className="w-6 h-6" />
@@ -60,7 +62,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ team, onClose }) =
           {isLoading && (
             <div className="flex flex-col items-center justify-center space-y-4 py-16">
                 <div className="w-12 h-12 border-4 border-contest-primary border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-gray-300">Gemini is analyzing the data...</p>
+                <p className="text-gray-300">{t('geminiAnalyzing')}</p>
             </div>
           )}
           {error && <p className="text-contest-red text-center">{error}</p>}
@@ -69,7 +71,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ team, onClose }) =
           )}
         </div>
         <div className="mt-4 pt-4 border-t border-contest-gray text-center text-xs text-gray-500 flex-shrink-0">
-            Powered by Gemini
+            {t('poweredByGemini')}
         </div>
       </div>
     </div>

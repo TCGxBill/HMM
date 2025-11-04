@@ -1,5 +1,6 @@
 import React from 'react';
 import { useContest } from '../context/ContestContext';
+import { useTranslation } from '../context/LanguageContext';
 import { Team, Submission } from '../types';
 import { SparkleIcon } from './Icons';
 
@@ -10,6 +11,7 @@ interface ScoreboardProps {
 
 export const Scoreboard: React.FC<ScoreboardProps> = ({ onTeamSelect, onAnalyzeTeam }) => {
   const { teams, tasks } = useContest();
+  const { t } = useTranslation();
 
   const getSubmissionStatus = (submission: Submission | undefined, teamId: number, taskId: string) => {
     const key = `${teamId}-${taskId}`;
@@ -70,7 +72,7 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({ onTeamSelect, onAnalyzeT
 
   return (
     <div className="font-sans my-8">
-      <h1 className="text-3xl md:text-4xl font-bold text-white text-center mb-6">Live Scoreboard</h1>
+      <h1 className="text-3xl md:text-4xl font-bold text-white text-center mb-6">{t('scoreboardTitle')}</h1>
       <div className="overflow-x-auto bg-contest-dark-light rounded-xl shadow-2xl">
         <style>{`
           @keyframes flash {
@@ -84,10 +86,10 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({ onTeamSelect, onAnalyzeT
         <table className="min-w-full text-sm text-left text-gray-300">
           <thead className="text-xs text-white uppercase bg-gray-900/50">
             <tr>
-              <th scope="col" className="py-3 px-4 text-center">Rank</th>
-              <th scope="col" className="py-3 px-6">Team Name</th>
-              <th scope="col" className="py-3 px-4 text-center">Solved</th>
-              <th scope="col" className="py-3 px-4 text-center">Total Score</th>
+              <th scope="col" className="py-3 px-4 text-center">{t('rank')}</th>
+              <th scope="col" className="py-3 px-6">{t('teamName')}</th>
+              <th scope="col" className="py-3 px-4 text-center">{t('solved')}</th>
+              <th scope="col" className="py-3 px-4 text-center">{t('totalScore')}</th>
               {tasks.map(task => (
                 <th key={task.id} scope="col" className="py-3 px-4 text-center">{task.name}</th>
               ))}
@@ -107,7 +109,7 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({ onTeamSelect, onAnalyzeT
                     <button
                       onClick={(e) => handleAnalyzeClick(e, team)}
                       className="text-contest-secondary hover:text-purple-400 transition-colors"
-                      title={`Analyze ${team.name}'s performance`}
+                      title={t('analyzePerformance', { teamName: team.name })}
                     >
                       <SparkleIcon className="w-5 h-5" />
                     </button>

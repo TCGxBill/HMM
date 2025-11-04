@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ContestProvider, useContest } from './context/ContestContext';
 import { ToastProvider } from './context/ToastContext';
+import { useLanguage, useTranslation } from './context/LanguageContext';
 import { LoginPage } from './components/LoginPage';
 import { Scoreboard } from './components/Scoreboard';
 import { AdminPanel } from './components/AdminPanel';
@@ -20,6 +21,8 @@ const AppContent: React.FC = () => {
   const { teams, contestStatus, contestStats } = useContest();
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [analyzingTeam, setAnalyzingTeam] = useState<Team | null>(null);
+  const { language, setLanguage } = useLanguage();
+  const { t } = useTranslation();
 
   if (!isAuthenticated) {
     return <LoginPage />;
@@ -31,15 +34,25 @@ const AppContent: React.FC = () => {
             <nav className="container mx-auto px-6 py-3 flex justify-between items-center">
                 <div className="flex items-center space-x-3">
                     <LogoIcon className="h-8 w-8 text-contest-primary"/>
-                    <h1 className="text-xl font-bold">ICPC NLP Contest</h1>
+                    <h1 className="text-xl font-bold">{t('headerTitle')}</h1>
                 </div>
-                <div className="flex items-center">
-                    <span className="text-gray-300 mr-4">Welcome, <span className="font-semibold">{user?.username}</span>!</span>
+                <div className="flex items-center space-x-4">
+                    <span className="text-gray-300">{t('welcomeMessage')}, <span className="font-semibold">{user?.username}</span>!</span>
+                    
+                    <select
+                        value={language}
+                        onChange={(e) => setLanguage(e.target.value as 'en-US' | 'vi-VN')}
+                        className="bg-contest-dark border border-contest-gray rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-contest-primary"
+                    >
+                        <option value="en-US">English</option>
+                        <option value="vi-VN">Tiếng Việt</option>
+                    </select>
+
                     <button 
                         onClick={logout}
                         className="bg-contest-red hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                     >
-                        Logout
+                        {t('logout')}
                     </button>
                 </div>
             </nav>

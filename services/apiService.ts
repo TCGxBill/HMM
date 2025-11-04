@@ -10,7 +10,7 @@ export const loginUser = async (username: string, password: string, role: 'admin
     const endpoint = role === 'admin' ? '/admins' : '/students';
     const response = await fetch(`${API_URL}${endpoint}`);
     if (!response.ok) {
-        throw new Error('Failed to fetch user data.');
+        throw new Error('error.fetchUserData');
     }
     const users: User[] = await response.json();
     
@@ -34,12 +34,12 @@ export const registerUser = async (userData: Omit<User, 'id'>): Promise<User> =>
 
     // 2. Check for username uniqueness
     if (allUsers.some(user => user.username === userData.username)) {
-        throw new Error('Username already exists.');
+        throw new Error('error.usernameExists');
     }
 
     // 3. Check for team name uniqueness for contestants
     if (userData.role === 'contestant' && students.some(student => student.teamName === userData.teamName)) {
-        throw new Error('Team name is already taken.');
+        throw new Error('error.teamNameExists');
     }
     
     // 4. If checks pass, proceed with registration
@@ -65,7 +65,7 @@ export const registerUser = async (userData: Omit<User, 'id'>): Promise<User> =>
 
     if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Registration failed.');
+        throw new Error(errorData.message || 'error.registrationFailed');
     }
 
     const newUser: User = await response.json();
@@ -78,7 +78,7 @@ export const registerUser = async (userData: Omit<User, 'id'>): Promise<User> =>
 export const getStudents = async (): Promise<User[]> => {
     const response = await fetch(`${API_URL}/students`);
     if (!response.ok) {
-        throw new Error('Failed to fetch student data.');
+        throw new Error('error.fetchStudentData');
     }
     return response.json();
 };
@@ -90,7 +90,7 @@ export const getStudents = async (): Promise<User[]> => {
 export const getAdmins = async (): Promise<User[]> => {
     const response = await fetch(`${API_URL}/admins`);
     if (!response.ok) {
-        throw new Error('Failed to fetch admin data.');
+        throw new Error('error.fetchAdminData');
     }
     return response.json();
 };
@@ -115,7 +115,7 @@ export const updateStudent = async (studentData: User): Promise<User> => {
     });
 
     if (!response.ok) {
-        throw new Error('Failed to update student data.');
+        throw new Error('error.updateStudentData');
     }
 
     return response.json();
@@ -130,6 +130,6 @@ export const deleteStudent = async (studentId: string): Promise<void> => {
     });
 
     if (!response.ok) {
-        throw new Error('Failed to delete student data.');
+        throw new Error('error.deleteStudentData');
     }
 };

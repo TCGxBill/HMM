@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../context/LanguageContext';
 import { LogoIcon } from './Icons';
 
 export const LoginPage: React.FC = () => {
@@ -19,6 +20,7 @@ export const LoginPage: React.FC = () => {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { login, register } = useAuth();
+  const { t } = useTranslation();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,10 +30,10 @@ export const LoginPage: React.FC = () => {
     try {
         const user = await login(loginUsername, loginPassword, currentRole);
         if (!user) {
-            setMessage({ text: 'Invalid username or password.', type: 'error' });
+            setMessage({ text: t('error.invalidCredentials'), type: 'error' });
         }
     } catch (error) {
-        setMessage({ text: 'Login failed. Please try again.', type: 'error' });
+        setMessage({ text: t('error.genericLogin'), type: 'error' });
     } finally {
         setIsLoading(false);
     }
@@ -40,7 +42,7 @@ export const LoginPage: React.FC = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if(currentRole === 'contestant' && !regTeamName) {
-        setMessage({ text: 'Team name is required for contestants.', type: 'error' });
+        setMessage({ text: t('error.teamNameRequired'), type: 'error' });
         return;
     }
     setMessage(null);
@@ -54,7 +56,7 @@ export const LoginPage: React.FC = () => {
             teamName: currentRole === 'contestant' ? regTeamName : 'AdminTeam',
             role: currentRole,
         });
-        setMessage({ text: 'Registration successful! Please log in.', type: 'success' });
+        setMessage({ text: t('registerSuccessMessage'), type: 'success' });
         setCurrentView('login');
         // Clear registration form
         setRegUsername('');
@@ -62,7 +64,8 @@ export const LoginPage: React.FC = () => {
         setRegPassword('');
         setRegTeamName('');
     } catch (error: any) {
-        setMessage({ text: error.message || 'Registration failed. An unknown error occurred.', type: 'error' });
+        const errorMessage = t(error.message) || t('error.registrationFailed');
+        setMessage({ text: errorMessage, type: 'error' });
     } finally {
         setIsLoading(false);
     }
@@ -86,61 +89,61 @@ export const LoginPage: React.FC = () => {
             <div className="flex justify-center items-center mb-4">
                 <LogoIcon className="h-12 w-12 text-contest-primary" />
             </div>
-          <h1 className="text-3xl font-bold text-white">ICPC Contest</h1>
-          <p className="text-contest-light-gray mt-2">Select your role to continue</p>
+          <h1 className="text-3xl font-bold text-white">{t('loginPageTitle')}</h1>
+          <p className="text-contest-light-gray mt-2">{t('loginPageSubtitle')}</p>
         </div>
 
         <div className="flex bg-contest-dark rounded-lg p-1">
             <button onClick={() => switchTab('contestant')} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${currentRole === 'contestant' ? 'bg-contest-primary text-white' : 'text-gray-400 hover:bg-contest-gray/50'}`}>
-                Contestant
+                {t('roleContestant')}
             </button>
             <button onClick={() => switchTab('admin')} className={`w-1/2 p-2 rounded-md text-sm font-semibold transition-colors ${currentRole === 'admin' ? 'bg-contest-primary text-white' : 'text-gray-400 hover:bg-contest-gray/50'}`}>
-                Admin
+                {t('roleAdmin')}
             </button>
         </div>
 
         {currentView === 'login' ? (
             <form className="space-y-4" onSubmit={handleLogin}>
-              <h2 className="text-xl font-semibold text-center text-white">Login</h2>
+              <h2 className="text-xl font-semibold text-center text-white">{t('loginTitle')}</h2>
               <div>
                 <input id="username" type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)}
                   className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary"
-                  placeholder="Username" required />
+                  placeholder={t('usernamePlaceholder')} required />
               </div>
               <div>
                 <input id="password" type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
                   className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary"
-                  placeholder="Password" required />
+                  placeholder={t('passwordPlaceholder')} required />
               </div>
               <MessageDisplay />
               <button type="submit" disabled={isLoading}
                 className="w-full p-3 bg-contest-primary text-white font-bold rounded-lg hover:bg-indigo-500 disabled:bg-contest-gray transition-colors">
-                {isLoading ? 'Logging in...' : 'Login'}
+                {isLoading ? t('loggingInButton') : t('loginButton')}
               </button>
               <p className="text-sm text-center text-gray-400">
-                No account? <a href="#" onClick={() => setCurrentView('register')} className="font-medium text-contest-primary hover:underline">Register</a>
+                {t('noAccount')} <a href="#" onClick={() => setCurrentView('register')} className="font-medium text-contest-primary hover:underline">{t('registerTitle')}</a>
               </p>
             </form>
         ) : (
             <form className="space-y-4" onSubmit={handleRegister}>
-                <h2 className="text-xl font-semibold text-center text-white">Register</h2>
-                <input type="text" value={regUsername} onChange={e => setRegUsername(e.target.value)} placeholder="Username" required 
+                <h2 className="text-xl font-semibold text-center text-white">{t('registerTitle')}</h2>
+                <input type="text" value={regUsername} onChange={e => setRegUsername(e.target.value)} placeholder={t('usernamePlaceholder')} required 
                     className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary" />
-                <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="Email" required
+                <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder={t('emailPlaceholder')} required
                     className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary" />
-                <input type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} placeholder="Password" required
+                <input type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} placeholder={t('passwordPlaceholder')} required
                     className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary" />
                 {currentRole === 'contestant' && (
-                    <input type="text" value={regTeamName} onChange={e => setRegTeamName(e.target.value)} placeholder="Team Name" required
+                    <input type="text" value={regTeamName} onChange={e => setRegTeamName(e.target.value)} placeholder={t('teamNamePlaceholder')} required
                         className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary" />
                 )}
                 <MessageDisplay />
                 <button type="submit" disabled={isLoading}
                     className="w-full p-3 bg-contest-green text-white font-bold rounded-lg hover:bg-green-600 disabled:bg-contest-gray transition-colors">
-                    {isLoading ? 'Registering...' : 'Register'}
+                    {isLoading ? t('registeringButton') : t('registerButton')}
                 </button>
                 <p className="text-sm text-center text-gray-400">
-                    Already have an account? <a href="#" onClick={() => setCurrentView('login')} className="font-medium text-contest-primary hover:underline">Login</a>
+                    {t('alreadyHaveAccount')} <a href="#" onClick={() => setCurrentView('login')} className="font-medium text-contest-primary hover:underline">{t('loginTitle')}</a>
                 </p>
             </form>
         )}

@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { getBotResponse } from '../services/geminiService';
+import { useTranslation } from '../context/LanguageContext';
 import { ChatMessage } from '../types';
 import { ChatIcon, CloseIcon, SendIcon } from './Icons';
 import type { Chat } from '@google/genai';
 
 export const Chatbot: React.FC = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { sender: 'bot', text: 'Hello! Ask me anything about competitive programming or this contest.' }
+    { sender: 'bot', text: t('chatbotWelcome') }
   ]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -19,6 +21,12 @@ export const Chatbot: React.FC = () => {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
+  
+  // Reset welcome message if language changes
+  useEffect(() => {
+    setMessages([{ sender: 'bot', text: t('chatbotWelcome') }]);
+    chatSessionRef.current = null; // Invalidate chat session to re-initialize with new system prompt if needed
+  }, [t]);
 
   const handleSendMessage = useCallback(async () => {
     if (userInput.trim() === '' || isLoading) return;
@@ -34,12 +42,12 @@ export const Chatbot: React.FC = () => {
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
       console.error("Gemini API error:", error);
-      const errorMessage: ChatMessage = { sender: 'bot', text: "Sorry, I couldn't get a response. Please try again." };
+      const errorMessage: ChatMessage = { sender: 'bot', text: t('error.getBotResponse') };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
-  }, [userInput, isLoading]);
+  }, [userInput, isLoading, t]);
 
   const toggleChat = () => setIsOpen(prev => !prev);
 
@@ -56,7 +64,7 @@ export const Chatbot: React.FC = () => {
       {isOpen && (
         <div className="fixed bottom-24 right-6 w-full max-w-sm h-[60vh] bg-contest-dark-light rounded-xl shadow-2xl flex flex-col transition-all duration-300 ease-in-out">
           <div className="bg-gray-900/50 p-4 text-white font-bold rounded-t-xl">
-            Gemini Assistant
+            {t('chatbotTitle')}
           </div>
           <div ref={chatContainerRef} className="flex-1 p-4 overflow-y-auto space-y-4">
             {messages.map((msg, index) => (
@@ -85,7 +93,7 @@ export const Chatbot: React.FC = () => {
                 value={userInput}
                 onChange={(e) => setUserInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Ask something..."
+                placeholder={t('chatbotPlaceholder')}
                 className="flex-1 bg-contest-dark border border-contest-gray rounded-full px-4 py-2 text-white placeholder-contest-light-gray focus:outline-none focus:ring-2 focus:ring-contest-primary"
                 disabled={isLoading}
               />
