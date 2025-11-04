@@ -1,9 +1,15 @@
 
+export interface SubmissionAttempt {
+  score: number;
+  timestamp: number; // e.g., Date.now()
+}
+
 export interface Submission {
   taskId: string;
   score: number | null;
   attempts: number;
   isBestScore: boolean;
+  history: SubmissionAttempt[];
   recentlyUpdated?: boolean; // For UI flash effect
 }
 
@@ -39,7 +45,7 @@ export interface User {
   teamName: string;
   // Properties from student API record
   bestScore?: number;
-  submissions?: Submission[];
+  submissions?: any[]; // Allow for old and new submission types during transition
 }
 
 export type ToastType = 'success' | 'error' | 'info';
