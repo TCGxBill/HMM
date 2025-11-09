@@ -14,7 +14,7 @@ export interface Submission {
 }
 
 export interface Team {
-  id: number;
+  id: string;
   rank: number;
   name: string;
   solved: number;

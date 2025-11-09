@@ -80,6 +80,7 @@
   "toastTeamUpdated": "Team updated locally! API update not implemented in this version.",
   "toastTaskUpdated": "Task updated!",
   "toastSubmissionReceived": "Submission for {taskId} received! Score: {score}",
+  "toastScoreboardUpdated": "Scoreboard updated live!",
   "error": {
     "genericLogin": "Login failed. Please try again.",
     "invalidCredentials": "Invalid username or password.",

@@ -80,6 +80,7 @@
   "toastTeamUpdated": "Đã cập nhật đội cục bộ! Cập nhật API chưa được triển khai trong phiên bản này.",
   "toastTaskUpdated": "Đã cập nhật bài thi!",
   "toastSubmissionReceived": "Đã nhận bài nộp cho {taskId}! Điểm: {score}",
+  "toastScoreboardUpdated": "Bảng điểm vừa được cập nhật!",
   "error": {
     "genericLogin": "Đăng nhập thất bại. Vui lòng thử lại.",
     "invalidCredentials": "Tên đăng nhập hoặc mật khẩu không hợp lệ.",

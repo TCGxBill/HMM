@@ -13,7 +13,8 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({ onTeamSelect, onAnalyzeT
   const { teams, tasks } = useContest();
   const { t } = useTranslation();
 
-  const getSubmissionStatus = (submission: Submission | undefined, teamId: number, taskId: string) => {
+  // FIX: Changed teamId from number to string to match the Team.id type.
+  const getSubmissionStatus = (submission: Submission | undefined, teamId: string, taskId: string) => {
     const key = `${teamId}-${taskId}`;
 
     if (!submission) {

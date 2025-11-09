@@ -31,7 +31,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
         // Use absolute paths from the root, which is more robust for fetch
         const [enRes, viRes] = await Promise.all([
           fetch('/locales/en.json'),
-          fetch('/locales/vi.json')
+          fetch('/services/vi.json')
         ]);
 
         if (!enRes.ok || !viRes.ok) {

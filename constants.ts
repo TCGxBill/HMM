@@ -10,7 +10,7 @@ export const mockTasks: Task[] = Array.from({ length: 8 }, (_, i) => ({
 // This mock data is now only a fallback if the API fails.
 export const mockTeams: Team[] = [
   {
-    id: 1,
+    id: "1",
     rank: 1,
     name: "NLP Wizards",
     solved: 5,
@@ -28,7 +28,7 @@ export const mockTeams: Team[] = [
     ],
   },
   {
-    id: 2,
+    id: "2",
     rank: 2,
     name: "Syntax Strikers",
     solved: 5,
@@ -46,7 +46,7 @@ export const mockTeams: Team[] = [
     ],
   },
     {
-    id: 3,
+    id: "3",
     rank: 3,
     name: "Lexical Legends",
     solved: 4,

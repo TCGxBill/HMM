@@ -1,6 +1,6 @@
 import { User } from '../types';
 
-const API_URL = 'https://68004a7eb72e9cfaf7272f66.mockapi.io';
+const API_URL = '/api';
 
 /**
  * Attempts to log in a user by checking credentials against the mock API.
