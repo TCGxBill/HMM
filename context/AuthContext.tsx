@@ -19,7 +19,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = useCallback(async (username: string, password: string, role: 'admin' | 'contestant'): Promise<User | null> => {
     try {
-        const loggedInUser = await apiService.loginUser(username, password, role);
+        const loggedInUser = await apiService.loginUser({ username, password, role });
         if (loggedInUser) {
             setUser(loggedInUser);
             return loggedInUser;
@@ -35,6 +35,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const register = useCallback(async (userData: Omit<User, 'id'>): Promise<User> => {
     try {
+        // Server now handles validation
         const newUser = await apiService.registerUser(userData);
         // Do not log in user automatically, force them to log in after registration
         return newUser;

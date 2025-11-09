@@ -1,131 +1,81 @@
-import { User } from '../types';
+import { User, SubmissionAttempt, Team } from '../types';
 
 const API_URL = '/api';
 
-/**
- * Attempts to log in a user by checking credentials against the mock API.
- * The API doesn't support querying, so we fetch all users and check locally.
- */
-export const loginUser = async (username: string, password: string, role: 'admin' | 'contestant'): Promise<User | null> => {
-    const endpoint = role === 'admin' ? '/admins' : '/students';
-    const response = await fetch(`${API_URL}${endpoint}`);
-    if (!response.ok) {
-        throw new Error('error.fetchUserData');
-    }
-    const users: User[] = await response.json();
-    
-    const user = users.find(u => u.username === username && u.password === password);
-    
-    if (user) {
-        // Add role to the user object as it's not in the API response
-        return { ...user, role };
-    }
-    
-    return null;
-};
+type LoginCredentials = Pick<User, 'username' | 'password' | 'role'>;
 
 /**
- * Registers a new user by POSTing their data to the mock API after checking for uniqueness.
+ * Attempts to log in a user by posting credentials to a secure backend endpoint.
  */
-export const registerUser = async (userData: Omit<User, 'id'>): Promise<User> => {
-    // 1. Fetch existing users to check for uniqueness
-    const [students, admins] = await Promise.all([getStudents(), getAdmins()]);
-    const allUsers = [...students, ...admins];
-
-    // 2. Check for username uniqueness
-    if (allUsers.some(user => user.username === userData.username)) {
-        throw new Error('error.usernameExists');
-    }
-
-    // 3. Check for team name uniqueness for contestants
-    if (userData.role === 'contestant' && students.some(student => student.teamName === userData.teamName)) {
-        throw new Error('error.teamNameExists');
-    }
-    
-    // 4. If checks pass, proceed with registration
-    const endpoint = userData.role === 'admin' ? '/admins' : '/students';
-    
-    const dataToSend: any = {
-        username: userData.username,
-        email: userData.email,
-        password: userData.password,
-    };
-
-    if (userData.role === 'contestant') {
-        dataToSend.teamName = userData.teamName;
-        dataToSend.bestScore = 0;
-        dataToSend.submissions = [];
-    }
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
+export const loginUser = async (credentials: LoginCredentials): Promise<User | null> => {
+    const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSend),
+        body: JSON.stringify(credentials),
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'error.registrationFailed');
+        if (response.status === 401) return null; // Invalid credentials
+        throw new Error('error.genericLogin');
     }
-
-    const newUser: User = await response.json();
-    return { ...newUser, role: userData.role };
+    
+    return response.json();
 };
 
 /**
- * Fetches all student records from the API to build the scoreboard.
+ * Registers a new user by POSTing their data to the backend.
+ * Uniqueness checks are now handled by the server.
  */
-export const getStudents = async (): Promise<User[]> => {
-    const response = await fetch(`${API_URL}/students`);
+export const registerUser = async (userData: Omit<User, 'id'>): Promise<User> => {
+    const response = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData),
+    });
+
+    if (!response.ok) {
+        // Try to parse error message from backend
+        const errorData = await response.json().catch(() => ({ message: 'error.registrationFailed' }));
+        throw new Error(errorData.message || 'error.registrationFailed');
+    }
+
+    return response.json();
+};
+
+/**
+ * Fetches the entire scoreboard data from the backend.
+ */
+export const getScoreboard = async (): Promise<Team[]> => {
+    const response = await fetch(`${API_URL}/scoreboard`);
     if (!response.ok) {
         throw new Error('error.fetchStudentData');
     }
     return response.json();
 };
 
-
 /**
- * Fetches all admin records from the API.
+ * Submits a solution attempt for a specific user and task.
  */
-export const getAdmins = async (): Promise<User[]> => {
-    const response = await fetch(`${API_URL}/admins`);
-    if (!response.ok) {
-        throw new Error('error.fetchAdminData');
-    }
-    return response.json();
-};
-
-
-/**
- * Updates a student's record (e.g., after a submission).
- */
-export const updateStudent = async (studentData: User): Promise<User> => {
-    const response = await fetch(`${API_URL}/students/${studentData.id}`, {
-        method: 'PUT',
+export const submitSolution = async (userId: string, taskId: string, attempt: SubmissionAttempt): Promise<void> => {
+    const response = await fetch(`${API_URL}/teams/${userId}/submit`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            // Only send fields the API expects
-            username: studentData.username,
-            email: studentData.email,
-            password: studentData.password,
-            teamName: studentData.teamName,
-            bestScore: studentData.bestScore,
-            submissions: studentData.submissions,
+            taskId,
+            attempt
         }),
     });
 
     if (!response.ok) {
         throw new Error('error.updateStudentData');
     }
-
-    return response.json();
-}
+};
 
 /**
- * Deletes a student record from the API.
+ * Deletes a team record from the API.
  */
-export const deleteStudent = async (studentId: string): Promise<void> => {
-    const response = await fetch(`${API_URL}/students/${studentId}`, {
+export const deleteTeam = async (teamId: string): Promise<void> => {
+    const response = await fetch(`${API_URL}/teams/${teamId}`, {
         method: 'DELETE',
     });
 

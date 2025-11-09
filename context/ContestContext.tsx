@@ -1,13 +1,16 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
 import usePersistentState from '../hooks/usePersistentState';
 import { Team, Task, Submission, ContestStatus, User } from '../types';
-import { mockTeams, mockTasks } from '../constants';
+import { mockTasks } from '../constants';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 import { useTranslation } from './LanguageContext';
 import { calculateScore, parseTaskKey } from '../services/scoringService';
 import * as apiService from '../services/apiService';
 import { io } from 'socket.io-client';
+
+// The backend server URL
+const BACKEND_URL = 'http://localhost:8080';
 
 interface ContestContextType {
   teams: Team[];
@@ -73,76 +76,40 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((team, index) => ({ ...team, rank: index + 1 }));
   }, [tasks]);
-
-  const transformUserDataToTeams = useCallback((users: User[]): Team[] => {
-    const teamsData = users.map((u) => ({
-      id: u.id, // Use stable API ID
-      apiUserId: u.id,
-      rank: 0, // Will be calculated later
-      name: u.teamName,
-      solved: (u.submissions ?? []).filter(s => s.score !== null && s.score > 0).length,
-      totalScore: u.bestScore ?? 0,
-      submissions: (u.submissions ?? []).map((sub: any) => ({
-          ...sub,
-          history: sub.history && sub.history.length > 0
-              ? sub.history
-              : (sub.score !== null
-                  ? Array.from({length: sub.attempts > 0 ? sub.attempts : 1}, (_, i) => ({ 
-                      score: i === (sub.attempts > 0 ? sub.attempts : 1) - 1 ? sub.score! : Math.max(0, sub.score! - (Math.random() * 15)),
-                      timestamp: Date.now() - ((sub.attempts > 0 ? sub.attempts : 1) - i) * 1000 * 60 * 15 
-                    })) 
-                  : [])
-      })),
-    }));
-    return reRankTeams(teamsData);
-  }, [reRankTeams]);
   
   const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-        const students = await apiService.getStudents();
-        const teamsData = transformUserDataToTeams(students);
-        setTeams(teamsData);
+        const scoreboardData = await apiService.getScoreboard();
+        const rankedTeams = reRankTeams(scoreboardData);
+        setTeams(rankedTeams);
     } catch (error) {
         console.error("Failed to load scoreboard data", error);
         addToast(t('error.loadScoreboard'), 'error');
-        const fallbackTeams = mockTeams.map(team => ({
-            ...team,
-            submissions: team.submissions.map(sub => ({
-                ...sub,
-                history: sub.score !== null 
-                    ? Array.from({length: sub.attempts}, (_, i) => ({ 
-                        score: i === sub.attempts - 1 ? sub.score! : Math.max(0, sub.score! - Math.random() * 10),
-                        timestamp: Date.now() - (sub.attempts - i) * 1000 * 60 * 5 
-                      })) 
-                    : []
-            }))
-        }));
-        setTeams(reRankTeams(fallbackTeams));
+        setTeams([]); // Clear teams on error instead of using mock data
     } finally {
         setIsLoading(false);
     }
-  }, [addToast, t, transformUserDataToTeams, setTeams, reRankTeams]);
+  }, [addToast, t, setTeams, reRankTeams]);
 
   useEffect(() => {
     if (user) {
         fetchInitialData();
 
-        const socket = io(); // Connects to the server that serves the page
+        const socket = io(BACKEND_URL);
 
         socket.on('connect', () => {
             console.log('Successfully connected to WebSocket server.');
         });
 
-        socket.on('scoreboard:update', (updatedStudents: User[]) => {
+        socket.on('scoreboard:update', (updatedScoreboard: Team[]) => {
             addToast(t('toastScoreboardUpdated'), 'info');
-            const newTeamsData = transformUserDataToTeams(updatedStudents);
+            const newTeamsData = reRankTeams(updatedScoreboard);
             
             setTeams(currentTeams => {
                 return newTeamsData.map(newTeam => {
                     const oldTeam = currentTeams.find(t => t.id === newTeam.id);
                     if (!oldTeam) {
-                        // Mark all submissions of a new team to flash
                         return { ...newTeam, submissions: newTeam.submissions.map(s => ({...s, recentlyUpdated: true})) };
                     }
 
@@ -150,11 +117,10 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
                         ...newTeam,
                         submissions: newTeam.submissions.map(newSub => {
                             const oldSub = oldTeam.submissions.find(s => s.taskId === newSub.taskId);
-                            // Flash if submission is new, score changed, or attempts changed
                             if (!oldSub || oldSub.score !== newSub.score || oldSub.attempts !== newSub.attempts) {
                                 return { ...newSub, recentlyUpdated: true };
                             }
-                            return newSub; // No change
+                            return newSub;
                         })
                     };
                 });
@@ -165,15 +131,14 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
             console.log('Disconnected from WebSocket server.');
         });
 
-        // Cleanup on component unmount or user logout
         return () => {
             socket.disconnect();
         };
     } else {
         setIsLoading(false);
-        setTeams([]); // Clear teams on logout
+        setTeams([]);
     }
-  }, [user, fetchInitialData, setTeams, transformUserDataToTeams, addToast, t]);
+  }, [user, fetchInitialData, setTeams, reRankTeams, addToast, t]);
   
   const contestStats = useMemo(() => {
     let totalSubmissions = 0;
@@ -202,7 +167,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [teams]);
 
   const submitSolution = useCallback(async (taskId: string, submissionContent: string) => {
-    if (!user || user.role !== 'contestant' || !user.teamName) {
+    if (!user || user.role !== 'contestant' || !user.id) {
       addToast(t('error.mustBeContestant'), 'error');
       return;
     }
@@ -221,40 +186,9 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         
         const newAttempt = { score, timestamp: Date.now() };
 
-        const studentToUpdate = await apiService.getStudents().then(students => students.find(s => s.id === user.id));
-
-        if(!studentToUpdate) {
-            addToast(t('error.findUserToUpdate'), 'error');
-            return;
-        }
-
-        const existingSubmissions = (studentToUpdate.submissions || []).map((s: any) => ({ ...s, history: s.history || [] }));
-        let submission = existingSubmissions.find(s => s.taskId === taskId);
-        
-        if (submission) {
-            submission.attempts += 1;
-            submission.history.push(newAttempt);
-            if (submission.score === null || score > submission.score) {
-              submission.score = score;
-            }
-            studentToUpdate.submissions = existingSubmissions.map(s => s.taskId === taskId ? submission : s);
-        } else {
-            submission = { 
-                taskId, 
-                score, 
-                attempts: 1, 
-                history: [newAttempt],
-                isBestScore: false
-            };
-            studentToUpdate.submissions = [...existingSubmissions, submission];
-        }
-
-        const bestScore = Math.max(...(studentToUpdate.submissions ?? []).map(s => s.score ?? 0));
-        studentToUpdate.bestScore = bestScore;
-
-        // The backend will receive this update, process it, and then broadcast the new scoreboard via WebSocket.
+        // The backend will receive this submission, process it, and then broadcast the new scoreboard via WebSocket.
         // No need to call a refresh function here.
-        await apiService.updateStudent(studentToUpdate);
+        await apiService.submitSolution(user.id, taskId, newAttempt);
 
     } catch (error: any) {
         addToast(t(error.message) || error.message, 'error');
@@ -302,15 +236,15 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
     
     const teamToDelete = teams.find(t => t.id === teamId);
-    if (!teamToDelete || !teamToDelete.apiUserId) {
+    if (!teamToDelete) {
         addToast(t('error.findTeamToDelete'), 'error');
         return;
     }
 
     try {
-        await apiService.deleteStudent(teamToDelete.apiUserId);
+        await apiService.deleteTeam(teamId);
         addToast(t('toastTeamDeleted', { teamName: teamToDelete.name }), 'success');
-        // The backend should broadcast the change via WebSocket. No refresh needed.
+        // The backend will broadcast the change via WebSocket. No refresh needed.
     } catch (error) {
         addToast(t('error.deleteTeamGeneral'), 'error');
         console.error('Error deleting team:', error);
