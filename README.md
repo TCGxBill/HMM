@@ -11,6 +11,7 @@ Follow these instructions to set up and run the project using Supabase.
 - [Node.js](https://nodejs.org/) (v18 or later recommended)
 - [npm](https://www.npmjs.com/)
 - A [Supabase](https://supabase.com/) account (free tier is sufficient)
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (for the one-time Edge Function deployment)
 
 ### Supabase Setup
 
@@ -24,7 +25,19 @@ Follow these instructions to set up and run the project using Supabase.
         - The **Project URL**.
         - The **Project API Key** (the `anon` `public` one).
 
-3.  **Set Up Database Schema and Functions:**
+3.  **Create a Storage Bucket:**
+    - In the Supabase dashboard, go to **Storage** (the bucket icon).
+    - Click **Create a new bucket**.
+    - Name the bucket **`task-keys`**.
+    - Make sure the bucket is **NOT** public.
+    - Click **Create bucket**.
+    - After creation, go to the bucket's policies and create new policies with the following settings to ensure only admins can upload keys:
+      - **Policy Name:** `Admin Upload Access`
+      - **Allowed operations:** `SELECT`, `INSERT`, `UPDATE`
+      - **Target roles:** `authenticated`
+      - **WITH CHECK expression:** `(bucket_id = 'task-keys') AND (auth.uid() IN ( SELECT users.id FROM users WHERE (users.role = 'admin'::text) ))`
+
+4.  **Set Up Database Schema and Functions:**
     - Go to the **SQL Editor** in the Supabase dashboard.
     - Click **+ New query**.
     - Copy the **entire contents** of the SQL script below and paste it into the query window.
@@ -33,10 +46,9 @@ Follow these instructions to set up and run the project using Supabase.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - COMPLETE SUPABASE SETUP SCRIPT
-    -- Version: 1.4
-    -- Description: This script sets up all necessary tables, policies, real-time replication,
-    --              and robust server-side functions. This version introduces a secure, server-side
-    --              scoring mechanism by adding a `task_keys` table and updating RPC functions.
+    -- Version: 1.5
+    -- Description: This version refactors the key upload mechanism for performance. The `upsert_task_key`
+    --              RPC function is removed in favor of a new Edge Function triggered by Supabase Storage.
     -- ================================================================================================
 
     -- 1. USERS TABLE for public profile information
@@ -63,8 +75,8 @@ Follow these instructions to set up and run the project using Supabase.
     );
     ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
     
-    -- 3. TASK KEYS TABLE (NEW)
-    -- Securely stores answer key data. Only accessible via SECURITY DEFINER functions.
+    -- 3. TASK KEYS TABLE
+    -- Securely stores answer key data. Now populated by an Edge Function.
     CREATE TABLE IF NOT EXISTS public.task_keys (
         task_id TEXT PRIMARY KEY,
         key_data JSONB NOT NULL,
@@ -80,6 +92,7 @@ Follow these instructions to set up and run the project using Supabase.
     -- SUBMISSIONS
     CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
     -- TASK_KEYS (VERY RESTRICTIVE)
+    -- This policy is now primarily for the Edge Function (running with service_role) and admin checks.
     CREATE POLICY "Allow admins to manage task keys" ON public.task_keys FOR ALL
         USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
         WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
@@ -143,7 +156,8 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
 
-    -- SUBMIT_SOLUTION (REWRITTEN FOR SERVER-SIDE SCORING)
+    -- SUBMIT_SOLUTION (REMAINS THE SAME)
+    -- This function reads pre-parsed data from task_keys, so it remains fast.
     CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_submission_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -195,27 +209,8 @@ Follow these instructions to set up and run the project using Supabase.
             updated_at = NOW();
     END;
     $$;
-    
-    -- UPSERT_TASK_KEY (NEW): For admins to upload/update an answer key.
-    CREATE OR REPLACE FUNCTION public.upsert_task_key(p_task_id TEXT, p_key_data JSONB)
-    RETURNS void
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path = public
-    AS $$
-    BEGIN
-        IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
-            RAISE EXCEPTION 'Permission denied: Only admins can manage task keys.';
-        END IF;
 
-        INSERT INTO public.task_keys(task_id, key_data, updated_at)
-        VALUES(p_task_id, p_key_data, NOW())
-        ON CONFLICT (task_id) DO UPDATE
-        SET key_data = p_key_data, updated_at = NOW();
-    END;
-    $$;
-
-    -- DELETE_TASK_KEY (NEW): For admins to delete a key when a task is deleted.
+    -- DELETE_TASK_KEY: For admins to delete a key when a task is deleted.
     CREATE OR REPLACE FUNCTION public.delete_task_key(p_task_id TEXT)
     RETURNS void
     LANGUAGE plpgsql
@@ -230,7 +225,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
     
-    -- GET_UPLOADED_TASK_KEYS (NEW): For admin UI to check status without exposing key data.
+    -- GET_UPLOADED_TASK_KEYS: For admin UI to check status without exposing key data.
     CREATE OR REPLACE FUNCTION public.get_uploaded_task_keys()
     RETURNS TABLE (task_id TEXT)
     LANGUAGE plpgsql
@@ -297,60 +292,191 @@ Follow these instructions to set up and run the project using Supabase.
     CREATE TRIGGER on_auth_user_created
         AFTER INSERT ON auth.users
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+    -- 8. STORAGE-BASED TRIGGER FOR PROCESSING TASK KEYS (NEW)
+    -- This function will be called by our Edge Function, not a traditional DB trigger.
+    CREATE OR REPLACE FUNCTION public.internal_upsert_task_key(p_task_id TEXT, p_key_data JSONB)
+    RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+        INSERT INTO public.task_keys(task_id, key_data, updated_at)
+        VALUES(p_task_id, p_key_data, NOW())
+        ON CONFLICT (task_id) DO UPDATE
+        SET key_data = p_key_data, updated_at = NOW();
+    END;
+    $$;
     ```
     
-4.  **Optional: Disable Email Confirmation**
-    For a smoother experience during a time-limited contest, you may want to disable email confirmation so users can log in immediately after registering.
+5.  **Optional: Disable Email Confirmation**
     - In your Supabase project, navigate to **Authentication** > **Providers**.
     - Click on **Email**.
     - Toggle off the **Confirm email** setting.
-    - **Note:** Disabling this is less secure. For a real-world application, it's recommended to keep email confirmation enabled.
 
+### Edge Function Setup (One-Time Task)
+
+To handle answer key processing efficiently without slowing down the app, we use a server-side Edge Function.
+
+1.  **Initialize Supabase locally:**
+    - Open your terminal in the project's root directory.
+    - Log in to the Supabase CLI: `supabase login`
+    - Link your local project to your remote Supabase project: `supabase link --project-ref YOUR_PROJECT_ID` (Replace `YOUR_PROJECT_ID` with the ID from your Supabase project's URL).
+
+2.  **Create the Edge Function:**
+    - Create the necessary folders: `mkdir -p supabase/functions/process-key-upload`
+    - Create a new file named `supabase/functions/process-key-upload/index.ts`.
+    - Paste the following code into the new file:
+
+    ```typescript
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    // Helper function to parse CSV content
+    const parseCSV = (csvString: string): string[][] => {
+        // (Full parsing logic as in scoringService.ts)
+        if (!csvString) return [];
+        const rows: string[][] = [];
+        let currentRow: string[] = [];
+        let currentField = '';
+        let inQuotes = false;
+        const normalizedCsv = csvString.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        for (let i = 0; i < normalizedCsv.length; i++) {
+            const char = normalizedCsv[i];
+            if (inQuotes) {
+                if (char === '"') {
+                    if (i + 1 < normalizedCsv.length && normalizedCsv[i + 1] === '"') {
+                        currentField += '"';
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    currentField += char;
+                }
+            } else {
+                switch (char) {
+                    case ',':
+                        currentRow.push(currentField);
+                        currentField = '';
+                        break;
+                    case '\n':
+                        currentRow.push(currentField);
+                        rows.push(currentRow);
+                        currentRow = [];
+                        currentField = '';
+                        break;
+                    case '"':
+                        if (currentField.length === 0) {
+                            inQuotes = true;
+                        } else {
+                            currentField += char;
+                        }
+                        break;
+                    default:
+                        currentField += char;
+                }
+            }
+        }
+        if (currentRow.length > 0 || currentField.length > 0) {
+            currentRow.push(currentField);
+            rows.push(currentRow);
+        }
+        return rows;
+    };
+    
+    // Main function to handle the request
+    Deno.serve(async (req) => {
+      try {
+        const { record } = await req.json();
+        
+        // This function should be triggered by a storage update, but for robustness,
+        // we check if we have a record to process.
+        if (!record || !record.name) {
+          throw new Error("Invalid request payload. Expected storage object record.");
+        }
+
+        const supabaseAdmin = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+
+        const filePath = record.name;
+        const taskId = filePath.split('.')[0];
+
+        // Download the file from storage
+        const { data: file, error: downloadError } = await supabaseAdmin.storage
+          .from('task-keys')
+          .download(filePath);
+
+        if (downloadError) throw downloadError;
+
+        const csvContent = await file.text();
+        const rows = parseCSV(csvContent);
+        
+        const startIndex = rows.length > 0 && rows[0][0].toLowerCase() === 'category_id' ? 1 : 0;
+        const keyData = rows.slice(startIndex);
+        
+        if (keyData.some(row => row.length < 3)) {
+            throw new Error("Malformed key file. Expected 'category_id,content,overall_band_score'.");
+        }
+
+        // Use the internal RPC function to upsert the parsed key
+        const { error: rpcError } = await supabaseAdmin.rpc('internal_upsert_task_key', {
+          p_task_id: taskId,
+          p_key_data: keyData,
+        });
+
+        if (rpcError) throw rpcError;
+
+        return new Response(JSON.stringify({ message: `Successfully processed key for ${taskId}` }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 400,
+        });
+      }
+    });
+    ```
+3.  **Deploy the Function:**
+    - From your terminal in the project root, run:
+      `supabase functions deploy process-key-upload --no-verify-jwt`
+    - This command uploads and deploys your function.
+
+4.  **Create a Webhook to Trigger the Function:**
+    - In your Supabase dashboard, go to **Database** > **Webhooks**.
+    - Click **Create a new webhook**.
+    - **Name:** `Process Uploaded Key`
+    - **Table:** `objects` (from the `storage` schema)
+    - **Events:** Check **`INSERT`**.
+    - **HTTP Request:**
+        - **URL:** `YOUR_SUPABASE_PROJECT_URL/functions/v1/process-key-upload`
+        - **HTTP Method:** `POST`
+    - Click **Create webhook**.
 
 ### Frontend Setup
 
 1.  **Configure Environment Variables:**
     - In the project's **root** directory, create a new file named `.env`.
-    - Add the Supabase URL, Key, and your Gemini API Key. **The `VITE_` prefix is important!**
+    - Add the Supabase URL, Key, and your Gemini API Key.
       ```env
       VITE_SUPABASE_URL="YOUR_SUPABASE_PROJECT_URL"
       VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
       VITE_API_KEY="YOUR_GEMINI_API_KEY"
       ```
-    - Replace the placeholder values with your actual credentials.
 
 2.  **Install Dependencies & Run:**
-    - Open your terminal in the project's **root** directory.
-    - Install the necessary packages:
-      ```bash
-      npm install
-      ```
-    - Start the development server:
-      ```bash
-      npm run dev
-      ```
-    - The application will now be running, typically at `http://localhost:5173`, and will connect to your Supabase project for all backend operations.
+    - `npm install`
+    - `npm run dev`
 
 ## Features
 
-- **Live Scoreboard**: Powered by Supabase Realtime, the scoreboard instantly updates and ranks teams. The top three teams are highlighted.
-- **Multi-Language Support**: Seamlessly switch between English and Vietnamese.
-- **Role-Based Authentication**: Secure login and registration flows via Supabase Auth.
-- **Contestant Panel**:
-    - Submit solutions by uploading CSV files.
-    - View a detailed submission history for each task.
-- **Admin Panel**:
-    - **Contest Control**: Start, pause ('Live'), or end the contest.
-    - **Task Management**: Dynamically add or delete contest tasks.
-    - **Answer Key Management**: Securely upload answer keys to the server. Scoring is performed server-side.
-    - **Team Management**: Delete teams and all their associated data directly from the UI.
-- **Gemini AI Integration**:
-    - **AI Chatbot**: An assistant for questions about competitive programming.
-    - **AI Performance Analysis**: Get an instant, AI-generated performance breakdown for any team.
-- **Data Visualization**: Dynamic bar chart for top teams and a stats overview bar.
-- **Modern UI/UX**: Responsive dark theme with toast notifications and modals.
-- **Data Persistence**: User session and language preference are persisted.
-
-## How to Use
-
-The application's usage remains the same as before. The primary difference is that user registration now creates accounts directly in your Supabase project, which you can manage from the Supabase dashboard under **Authentication**.
+- **Blazing Fast Uploads**: Answer keys are now uploaded directly to optimized storage, making the process feel instant for admins.
+- **Live Scoreboard**: Powered by Supabase Realtime.
+- **Multi-Language Support**: English and Vietnamese.
+- **Role-Based Authentication**: Secure login/registration.
+- **Admin & Contestant Panels**: Full suite of features with server-side scoring.
+- **Gemini AI Integration**: Chatbot and performance analysis.
+- **Data Visualization**: Charts and stats bars.
+- **Modern UI/UX**: Responsive dark theme.

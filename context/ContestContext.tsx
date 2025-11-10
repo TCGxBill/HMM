@@ -5,7 +5,7 @@ import { mockTasks } from '../constants';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 import { useTranslation } from './LanguageContext';
-import { parseTaskKey, parseCSV } from '../services/scoringService';
+import { parseCSV } from '../services/scoringService';
 import { supabase } from '../services/supabaseClient';
 
 interface ContestContextType {
@@ -20,7 +20,7 @@ interface ContestContextType {
   isLoading: boolean;
   submitSolution: (taskId: string, submissionContent: string) => Promise<void>;
   updateContestStatus: (newStatus: ContestStatus) => void;
-  setTaskKey: (taskId: string, keyContent: string) => void;
+  setTaskKey: (taskId: string, keyFile: File) => void;
   addTeam: (teamName: string) => void;
   updateTeam: (team: Team) => void;
   deleteTeam: (teamId: string) => void;
@@ -220,25 +220,31 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     addToast(t('toastContestStatusUpdated', { status: translatedStatus }), 'info');
   };
 
-  const setTaskKey = async (taskId: string, keyContent: string) => {
+  const setTaskKey = async (taskId: string, keyFile: File) => {
     if (user?.role !== 'admin') {
       addToast(t('error.adminOnly'), 'error');
       return;
     }
     try {
-      const parsedKey = parseTaskKey(keyContent);
+      const filePath = `${taskId}.csv`;
       
-      const { error } = await supabase.rpc('upsert_task_key', {
-        p_task_id: taskId,
-        p_key_data: parsedKey
-      });
+      const { error } = await supabase
+        .storage
+        .from('task-keys')
+        .upload(filePath, keyFile, {
+          cacheControl: '3600',
+          upsert: true, // Overwrite the file if it already exists
+        });
 
       if (error) throw error;
       
       addToast(t('toastKeyUploaded', { taskId }), 'success');
-      // Realtime subscription will update the 'keyUploaded' status in the UI
+      // The Edge Function will be triggered by the upload.
+      // The realtime subscription to the `task_keys` table will update the UI automatically.
+
     } catch (error: any) {
-      addToast(t('error.parsingKeyError', { taskId, error: error.message }), 'error');
+      console.error("Error uploading key file:", error);
+      addToast(`Error uploading key: ${error.message}`, 'error');
     }
   };
 
@@ -293,12 +299,16 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     setTasks(prev => prev.filter(t => t.id !== taskId));
 
     try {
-        // Also delete the key from the database
-        const { error } = await supabase.rpc('delete_task_key', { p_task_id: taskId });
-        if (error) throw error;
+        // Also delete the key from the database and storage
+        const { error: rpcError } = await supabase.rpc('delete_task_key', { p_task_id: taskId });
+        if (rpcError) throw rpcError;
+
+        const { error: storageError } = await supabase.storage.from('task-keys').remove([`${taskId}.csv`]);
+        if (storageError) console.warn("Could not delete from storage, it might not exist.", storageError);
+
     } catch (error) {
-        console.error("Error deleting task key:", error);
-        addToast('Failed to delete task key from server.', 'error');
+        console.error("Error deleting task assets:", error);
+        addToast('Failed to delete task assets from server.', 'error');
         // Optionally, add the task back to the list if the server call fails
     }
   };

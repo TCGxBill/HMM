@@ -15,12 +15,8 @@ const TaskKeyManager: React.FC<{ task: Task }> = ({ task }) => {
     const onDrop = useCallback((acceptedFiles: File[]) => {
         if (acceptedFiles.length > 0) {
             const file = acceptedFiles[0];
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const content = event.target?.result as string;
-                setTaskKey(task.id, content);
-            };
-            reader.readAsText(file);
+            // The new architecture uploads the file directly instead of reading it.
+            setTaskKey(task.id, file);
         }
     }, [task.id, setTaskKey]);
 
