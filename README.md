@@ -135,25 +135,26 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
     
-    -- This function allows an admin to delete a team.
+    -- This function allows an admin to PERMANENTLY delete a team and free up their email.
     CREATE OR REPLACE FUNCTION delete_team(p_user_id UUID)
     RETURNS void
     LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public
     AS $$
     DECLARE
         requesting_user_role TEXT;
     BEGIN
-        -- Check if the user calling this function is an admin
+        -- First, verify the calling user IS an admin from our public.users table.
         SELECT role INTO requesting_user_role FROM public.users WHERE id = auth.uid();
 
-        IF requesting_user_role = 'admin' THEN
-            -- If admin, proceed to delete the user from the master auth table.
-            -- The 'ON DELETE CASCADE' in our table definitions will handle cleanup.
-            DELETE FROM auth.users WHERE id = p_user_id;
-        ELSE
-            -- If not an admin, raise an error.
+        IF requesting_user_role <> 'admin' THEN
             RAISE EXCEPTION 'You do not have permission to delete a team.';
         END IF;
+
+        -- If the check passes, proceed with the permanent deletion.
+        -- This function PERMANENTLY deletes the user and all their data, allowing the email to be reused.
+        PERFORM auth.admin_delete_user(p_user_id);
     END;
     $$;
 
