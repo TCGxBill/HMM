@@ -217,7 +217,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
             submissionData.shift();
         }
 
-        const { error } = await supabase.rpc('submit_solution', {
+        const { data: score, error } = await supabase.rpc('submit_solution', {
             p_user_id: user.id,
             p_task_id: taskId,
             p_submission_data: submissionData
@@ -225,8 +225,8 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
 
         if (error) throw error;
         
-        addToast(t('toastSubmissionReceived'), 'success');
-        // Realtime subscription will handle updating the UI and showing the final score.
+        addToast(t('toastSubmissionReceived', { taskId, score: score.toFixed(1) }), 'success');
+        // Realtime subscription will handle updating the UI.
 
     } catch (error: any) {
         console.error("Submission RPC error:", error);

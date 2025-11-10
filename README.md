@@ -79,8 +79,8 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - SCRIPT CÀI ĐẶT SUPABASE HOÀN CHỈNH
-    -- Phiên bản: 1.8
-    -- Mô tả: Thêm các chỉ mục (index) để tối ưu hiệu năng tải bảng điểm.
+    -- Phiên bản: 1.9
+    -- Mô tả: Cập nhật hàm submit_solution để trả về điểm số, khắc phục lỗi hiển thị thông báo.
     -- ================================================================================================
 
     -- 1. BẢNG USERS cho thông tin công khai
@@ -108,7 +108,6 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
     
     -- 3. BẢNG TASK KEYS
-    -- Lưu trữ an toàn dữ liệu đáp án. Bảng này được cập nhật bởi một Edge Function.
     CREATE TABLE IF NOT EXISTS public.task_keys (
         task_id TEXT PRIMARY KEY,
         key_data JSONB NOT NULL,
@@ -123,7 +122,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     CREATE POLICY "Allow users to insert their own profile" ON public.users FOR INSERT WITH CHECK (auth.uid() = id);
     -- SUBMISSIONS
     CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
-    -- TASK_KEYS (CỰC KỲ BẢO MẬT)
+    -- TASK_KEYS
     CREATE POLICY "Allow admins to MANAGE keys" ON public.task_keys FOR ALL
         USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
         WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
@@ -141,7 +140,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
 
     -- 6. CÁC HÀM SERVER-SIDE (RPC)
 
-    -- GET_SCOREBOARD: Lấy dữ liệu bảng điểm đầy đủ, có xử lý tie-break.
+    -- GET_SCOREBOARD
     CREATE OR REPLACE FUNCTION public.get_scoreboard()
     RETURNS TABLE (
         id UUID,
@@ -187,9 +186,9 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
 
-    -- SUBMIT_SOLUTION: Hàm chấm điểm an toàn trên server.
+    -- SUBMIT_SOLUTION: Hàm chấm điểm an toàn trên server, trả về điểm số.
     CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_submission_data JSONB)
-    RETURNS void
+    RETURNS NUMERIC -- SỬA ĐỔI: Trả về kiểu NUMERIC
     LANGUAGE plpgsql
     SECURITY DEFINER
     SET search_path = public
@@ -231,10 +230,11 @@ Làm theo các bước sau để thiết lập và chạy dự án.
             best_score = GREATEST(submissions.best_score, v_score),
             history = submissions.history || v_new_attempt,
             updated_at = NOW();
+        RETURN v_score; -- SỬA ĐỔI: Trả về điểm vừa tính
     END;
     $$;
 
-    -- DELETE_TASK_KEY: Cho admin xóa đáp án khi xóa một bài thi.
+    -- DELETE_TASK_KEY
     CREATE OR REPLACE FUNCTION public.delete_task_key(p_task_id TEXT)
     RETURNS void
     LANGUAGE plpgsql
@@ -249,7 +249,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
     
-    -- GET_UPLOADED_TASK_KEYS: Cho admin UI kiểm tra trạng thái mà không lộ dữ liệu đáp án.
+    -- GET_UPLOADED_TASK_KEYS
     CREATE OR REPLACE FUNCTION public.get_uploaded_task_keys()
     RETURNS TABLE (task_id TEXT)
     LANGUAGE plpgsql
@@ -264,7 +264,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
 
-    -- DELETE_TEAM: Cho phép admin xóa VĨNH VIỄN một đội.
+    -- DELETE_TEAM
     CREATE OR REPLACE FUNCTION public.delete_team(p_user_id UUID)
     RETURNS void
     LANGUAGE plpgsql
@@ -279,7 +279,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
 
-    -- CLEANUP_ORPHAN_AUTH_USERS: Hàm bảo trì cho admin.
+    -- CLEANUP_ORPHAN_AUTH_USERS
     CREATE OR REPLACE FUNCTION public.cleanup_orphan_auth_users()
     RETURNS TABLE (deleted_user_id UUID, status TEXT)
     LANGUAGE plpgsql
@@ -317,8 +317,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
         AFTER INSERT ON auth.users
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-    -- 8. HÀM NỘI BỘ CHO EDGE FUNCTION (ĐÃ SỬA)
-    -- Hàm này được gọi bởi Edge Function và cần quyền cao hơn để vượt qua RLS.
+    -- 8. HÀM NỘI BỘ CHO EDGE FUNCTION
     CREATE OR REPLACE FUNCTION public.internal_upsert_task_key(p_task_id TEXT, p_key_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -426,9 +425,9 @@ Làm theo các bước sau để thiết lập và chạy dự án.
         const taskId = filePath.split('.')[0];
 
         // **KIỂM TRA BẢO VỆ**: Bỏ qua các tệp giữ chỗ (placeholder) hoặc file không có tên hợp lệ.
-        if (!taskId || taskId.trim() === '' || taskId.startsWith('.')) {
-            console.log(`Ignoring file with invalid name: ${filePath}`);
-            return new Response(JSON.stringify({ message: `Ignoring file with invalid name` }), {
+        if (!taskId || taskId.trim() === '' || taskId.startsWith('.') || !filePath.endsWith('.csv')) {
+            console.log(`Ignoring file with invalid name or extension: ${filePath}`);
+            return new Response(JSON.stringify({ message: `Ignoring file with invalid name or extension` }), {
               headers: { 'Content-Type': 'application/json' },
               status: 200,
             });
