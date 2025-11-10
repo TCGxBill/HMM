@@ -30,6 +30,7 @@
   "keyStatus": "Key Status",
   "keyUploaded": "Uploaded",
   "keyMissing": "Missing",
+  "keyUploading": "Uploading...",
   "keyPrivate": "Private",
   "keyPublic": "Public",
   "manageTeamsTitle": "Manage Teams",

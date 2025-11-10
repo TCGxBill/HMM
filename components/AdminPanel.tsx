@@ -9,21 +9,23 @@ import { TeamEditModal } from './TeamEditModal';
 import { TaskEditModal } from './TaskEditModal';
 
 const TaskKeyManager: React.FC<{ task: Task }> = ({ task }) => {
-    const { setTaskKey, updateTask } = useContest();
+    const { setTaskKey, updateTask, uploadingTasks } = useContest();
     const { t } = useTranslation();
+    const isUploading = uploadingTasks.has(task.id);
 
     const onDrop = useCallback((acceptedFiles: File[]) => {
-        if (acceptedFiles.length > 0) {
+        if (acceptedFiles.length > 0 && !isUploading) {
             const file = acceptedFiles[0];
             // The new architecture uploads the file directly instead of reading it.
             setTaskKey(task.id, file);
         }
-    }, [task.id, setTaskKey]);
+    }, [task.id, setTaskKey, isUploading]);
 
     const { getRootProps, getInputProps } = useDropzone({
         onDrop,
         accept: { 'text/csv': ['.csv'] },
         multiple: false,
+        disabled: isUploading,
     });
 
     const handleVisibilityToggle = () => {
@@ -35,14 +37,22 @@ const TaskKeyManager: React.FC<{ task: Task }> = ({ task }) => {
         <li className="flex items-center justify-between bg-contest-dark-light p-3 rounded-lg">
             <div className="flex-1">
                 <p className="text-white font-semibold">{task.name} ({task.id})</p>
-                <p className={`text-xs ${task.keyUploaded ? 'text-contest-green' : 'text-contest-yellow'}`}>
-                    {t('keyStatus')}: {task.keyUploaded ? t('keyUploaded') : t('keyMissing')}
-                </p>
+                {isUploading ? (
+                    <p className="text-xs text-contest-primary animate-pulse">{t('keyUploading')}</p>
+                ) : (
+                    <p className={`text-xs ${task.keyUploaded ? 'text-contest-green' : 'text-contest-yellow'}`}>
+                        {t('keyStatus')}: {task.keyUploaded ? t('keyUploaded') : t('keyMissing')}
+                    </p>
+                )}
             </div>
              <div className="flex items-center space-x-4">
-                <div {...getRootProps()} className="cursor-pointer text-gray-400 hover:text-white" title="Upload key for this task">
+                <div {...getRootProps()} className={`cursor-pointer text-gray-400 ${isUploading ? 'cursor-not-allowed text-gray-600' : 'hover:text-white'}`} title="Upload key for this task">
                     <input {...getInputProps()} />
-                    <UploadIcon className="w-6 h-6" />
+                    {isUploading ? (
+                        <div className="w-6 h-6 border-2 border-contest-primary border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                        <UploadIcon className="w-6 h-6" />
+                    )}
                 </div>
                 <div className="flex items-center space-x-2">
                     <span className={`text-sm font-medium ${task.keyVisibility === 'public' ? 'text-gray-400' : 'text-white'}`}>{t('keyPrivate')}</span>

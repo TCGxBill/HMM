@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect, useRef } from 'react';
 import usePersistentState from '../hooks/usePersistentState';
 import { Team, Task, Submission, ContestStatus, User } from '../types';
 import { mockTasks } from '../constants';
@@ -18,6 +18,7 @@ interface ContestContextType {
     avgAttempts: number;
   };
   isLoading: boolean;
+  uploadingTasks: Set<string>;
   submitSolution: (taskId: string, submissionContent: string) => Promise<void>;
   updateContestStatus: (newStatus: ContestStatus) => void;
   setTaskKey: (taskId: string, keyFile: File) => void;
@@ -37,26 +38,37 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [tasks, setTasks] = usePersistentState<Task[]>('tasks', mockTasks);
   const [contestStatus, setContestStatus] = usePersistentState<ContestStatus>('contestStatus', 'Live');
   const [isLoading, setIsLoading] = useState(true);
+  const [uploadingTasks, setUploadingTasks] = useState(new Set<string>());
+  
+  const isFetchingScoreboard = useRef(false);
+  const isFetchingTaskStatus = useRef(false);
   
   const { user } = useAuth();
   const { addToast } = useToast();
   const { t } = useTranslation();
 
   const reRankTeams = useCallback((updatedTeams: Team[]): Team[] => {
-    // 1. Find the best score for each task across all teams
+    // This function no longer depends on the `tasks` state, breaking the infinite loop.
+    // It derives the tasks from the submissions themselves.
     const bestScoresPerTask: { [taskId: string]: number } = {};
-    
-    tasks.forEach(task => {
+    const allTaskIds = new Set<string>();
+
+    updatedTeams.forEach(team => {
+        team.submissions.forEach(sub => {
+            allTaskIds.add(sub.taskId);
+        });
+    });
+
+    allTaskIds.forEach(taskId => {
         const scores = updatedTeams
-            .map(team => team.submissions.find(s => s.taskId === task.id)?.score)
+            .map(team => team.submissions.find(s => s.taskId === taskId)?.score)
             .filter((score): score is number => score !== null && score !== undefined);
         
         if (scores.length > 0) {
-            bestScoresPerTask[task.id] = Math.max(...scores);
+            bestScoresPerTask[taskId] = Math.max(...scores);
         }
     });
 
-    // 2. Update isBestScore flag for each submission
     const teamsWithBestScores = updatedTeams.map(team => ({
         ...team,
         submissions: team.submissions.map(sub => ({
@@ -65,22 +77,21 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         })),
     }));
     
-    // 3. Sort teams by totalScore (primary) and lastSolveTimestamp (secondary tie-breaker)
     return teamsWithBestScores
       .sort((a, b) => {
         if (a.totalScore !== b.totalScore) {
           return b.totalScore - a.totalScore;
         }
-        // If scores are equal, the one with the lower (earlier) timestamp wins.
-        // Teams with no solves (null timestamp) are ranked last among ties.
         const timeA = a.lastSolveTimestamp ?? Infinity;
         const timeB = b.lastSolveTimestamp ?? Infinity;
         return timeA - timeB;
       })
       .map((team, index) => ({ ...team, rank: index + 1 }));
-  }, [tasks]);
-  
-  const fetchInitialData = useCallback(async () => {
+  }, []);
+
+  const fetchScoreboard = useCallback(async () => {
+    if (isFetchingScoreboard.current) return;
+    isFetchingScoreboard.current = true;
     setIsLoading(true);
     try {
         const { data: scoreboardData, error: scoreboardError } = await supabase.rpc('get_scoreboard');
@@ -93,39 +104,52 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         
         const rankedTeams = reRankTeams(mappedData);
         setTeams(rankedTeams);
-
-        // If user is admin, fetch which keys have been uploaded
-        if (user?.role === 'admin') {
-            const { data: keyStatusData, error: keyStatusError } = await supabase.rpc('get_uploaded_task_keys');
-            if(keyStatusError) throw keyStatusError;
-
-            const uploadedKeyIds = new Set(keyStatusData.map((k: any) => k.task_id));
-            setTasks(prevTasks => prevTasks.map(t => ({...t, keyUploaded: uploadedKeyIds.has(t.id)})));
-        }
-
     } catch (error) {
-        console.error("Failed to load initial data", error);
+        console.error("Failed to load scoreboard data", error);
         addToast(t('error.loadScoreboard'), 'error');
-        setTeams([]);
     } finally {
         setIsLoading(false);
+        isFetchingScoreboard.current = false;
     }
-  }, [addToast, t, setTeams, reRankTeams, user, setTasks]);
+  }, [addToast, t, setTeams, reRankTeams]);
+
+  const fetchTaskKeyStatus = useCallback(async () => {
+    if (user?.role !== 'admin' || isFetchingTaskStatus.current) return;
+    isFetchingTaskStatus.current = true;
+    try {
+      const { data: keyStatusData, error: keyStatusError } = await supabase.rpc('get_uploaded_task_keys');
+      if (keyStatusError) throw keyStatusError;
+
+      const uploadedKeyIds = new Set(keyStatusData.map((k: any) => k.task_id));
+      
+      setTasks(prevTasks => {
+        const needsUpdate = prevTasks.some(t => t.keyUploaded !== uploadedKeyIds.has(t.id));
+        if (!needsUpdate) return prevTasks;
+        return prevTasks.map(t => ({ ...t, keyUploaded: uploadedKeyIds.has(t.id) }));
+      });
+    } catch (error) {
+        console.error("Failed to fetch task key status:", error);
+    } finally {
+        isFetchingTaskStatus.current = false;
+    }
+  }, [user, setTasks]);
+
 
   useEffect(() => {
     if (user) {
-        fetchInitialData();
+        fetchScoreboard();
+        fetchTaskKeyStatus();
 
         const channel = supabase
             .channel('scoreboard-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, payload => {
                 console.log('Submission change received!', payload);
                 addToast(t('toastScoreboardUpdated'), 'info');
-                fetchInitialData();
+                fetchScoreboard();
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `role=eq.contestant` }, payload => {
                  console.log('Contestant user change received!', payload);
-                 fetchInitialData();
+                 fetchScoreboard();
             })
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_keys' }, payload => {
                 if (user.role === 'admin') {
@@ -148,7 +172,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         setIsLoading(false);
         setTeams([]);
     }
-  }, [user, fetchInitialData, addToast, t, setTasks]);
+  }, [user, fetchScoreboard, fetchTaskKeyStatus, addToast, t, setTasks]);
   
   const contestStats = useMemo(() => {
     let totalSubmissions = 0;
@@ -225,6 +249,9 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       addToast(t('error.adminOnly'), 'error');
       return;
     }
+    
+    setUploadingTasks(prev => new Set(prev).add(taskId));
+
     try {
       const filePath = `${taskId}.csv`;
       
@@ -245,6 +272,12 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     } catch (error: any) {
       console.error("Error uploading key file:", error);
       addToast(`Error uploading key: ${error.message}`, 'error');
+    } finally {
+        setUploadingTasks(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(taskId);
+            return newSet;
+        });
     }
   };
 
@@ -322,7 +355,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     setTasks(mockTasks);
     setContestStatus('Live');
     addToast(t('toastContestReset'), 'info');
-    fetchInitialData(); // Refetch from DB to get the current server state for teams and keys.
+    fetchScoreboard(); 
   };
 
   return (
@@ -332,6 +365,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       contestStatus,
       contestStats,
       isLoading,
+      uploadingTasks,
       submitSolution,
       updateContestStatus,
       setTaskKey,
