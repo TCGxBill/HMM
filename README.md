@@ -31,9 +31,16 @@ Follow these instructions to set up and run the project using Supabase.
     - Click **RUN**. This single script will create your tables, enable real-time updates, set up security policies, and create the necessary server-side functions.
 
     ```sql
+    -- ================================================================================================
+    -- PAIC LIVE SCOREBOARD - COMPLETE SUPABASE SETUP SCRIPT
+    -- Version: 1.2
+    -- Description: This script sets up all necessary tables, policies, real-time replication,
+    --              and robust server-side functions for user creation, deletion, and cleanup.
+    -- ================================================================================================
+
     -- 1. USERS TABLE for public profile information
-    -- This table will store non-sensitive user data and is linked to the master auth.users table.
-    CREATE TABLE users (
+    -- Stores non-sensitive user data linked to the master auth.users table.
+    CREATE TABLE IF NOT EXISTS public.users (
         id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
         username VARCHAR(255) UNIQUE NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
@@ -42,11 +49,11 @@ Follow these instructions to set up and run the project using Supabase.
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     -- Enable Row Level Security
-    ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
     -- 2. SUBMISSIONS TABLE
-    -- This table stores all submission data for each user/task.
-    CREATE TABLE submissions (
+    -- Stores all submission data for each user/task.
+    CREATE TABLE IF NOT EXISTS public.submissions (
         id SERIAL PRIMARY KEY,
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
         task_id VARCHAR(50) NOT NULL,
@@ -57,26 +64,29 @@ Follow these instructions to set up and run the project using Supabase.
         UNIQUE(user_id, task_id)
     );
     -- Enable Row Level Security
-    ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
 
     -- 3. RLS POLICIES (Row Level Security)
-    -- These policies define who can access or modify the data.
-    -- Users can see all other users' public profiles.
-    CREATE POLICY "Allow public read access to users" ON users FOR SELECT USING (true);
-    -- Users can only insert their own profile.
-    CREATE POLICY "Allow users to insert their own profile" ON users FOR INSERT WITH CHECK (auth.uid() = id);
-    -- Users can see all submissions.
-    CREATE POLICY "Allow public read access to submissions" ON submissions FOR SELECT USING (true);
-    -- Users can only insert/update their own submissions (delegated to RPC function).
-    -- We don't need direct insert/update policies as we'll use a secure function.
+    -- Defines who can access or modify the data.
+    CREATE POLICY "Allow public read access to users" ON public.users FOR SELECT USING (true);
+    CREATE POLICY "Allow users to insert their own profile" ON public.users FOR INSERT WITH CHECK (auth.uid() = id);
+    CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
+    -- Note: Direct insert/update policies for submissions are not needed as we use a secure RPC function.
 
     -- 4. REALTIME SETUP
     -- Enable real-time updates for the 'users' and 'submissions' tables.
-    ALTER PUBLICATION supabase_realtime ADD TABLE users, submissions;
+    DO $$
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions;
+    EXCEPTION
+      WHEN duplicate_object THEN
+        -- Publication already exists, do nothing.
+    END $$;
 
     -- 5. SERVER-SIDE FUNCTIONS (RPC)
-    -- This function securely gets the full scoreboard data, just like the old backend API.
-    CREATE OR REPLACE FUNCTION get_scoreboard()
+
+    -- GET_SCOREBOARD: Securely gets the full scoreboard data.
+    CREATE OR REPLACE FUNCTION public.get_scoreboard()
     RETURNS TABLE (
         id UUID,
         "teamName" TEXT,
@@ -91,39 +101,28 @@ Follow these instructions to set up and run the project using Supabase.
         SELECT
             u.id,
             u.team_name::text as "teamName",
-            COALESCE(
-                (SELECT SUM(s_sum.best_score) FROM submissions s_sum WHERE s_sum.user_id = u.id), 0
-            ) as "totalScore",
-            COALESCE(
-                (SELECT COUNT(*) FROM submissions s_count WHERE s_count.user_id = u.id AND s_count.best_score > 0), 0
-            ) as solved,
-            COALESCE(
-                (
-                    SELECT json_agg(json_build_object(
+            COALESCE((SELECT SUM(s_sum.best_score) FROM public.submissions s_sum WHERE s_sum.user_id = u.id), 0) as "totalScore",
+            COALESCE((SELECT COUNT(*) FROM public.submissions s_count WHERE s_count.user_id = u.id AND s_count.best_score > 0), 0) as solved,
+            COALESCE((SELECT json_agg(json_build_object(
                         'taskId', s_inner.task_id,
                         'score', s_inner.best_score,
                         'attempts', jsonb_array_length(s_inner.history),
                         'history', s_inner.history
                     ))
-                    FROM submissions s_inner WHERE s_inner.user_id = u.id
-                ), '[]'::json
-            ) as submissions
-        FROM users u
+                    FROM public.submissions s_inner WHERE s_inner.user_id = u.id), '[]'::json) as submissions
+        FROM public.users u
         WHERE u.role = 'contestant'
         GROUP BY u.id
         ORDER BY "totalScore" DESC;
     END;
     $$;
 
-    -- This function handles a new submission securely.
-    CREATE OR REPLACE FUNCTION submit_solution(
-        p_user_id UUID,
-        p_task_id TEXT,
-        p_attempt JSONB
-    )
+    -- SUBMIT_SOLUTION: Securely handles a new submission.
+    CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_attempt JSONB)
     RETURNS void
     LANGUAGE plpgsql
-    SECURITY DEFINER -- This allows the function to run with elevated privileges
+    SECURITY DEFINER
+    SET search_path = public
     AS $$
     BEGIN
         INSERT INTO submissions (user_id, task_id, best_score, history)
@@ -131,12 +130,13 @@ Follow these instructions to set up and run the project using Supabase.
         ON CONFLICT (user_id, task_id) DO UPDATE 
         SET 
             best_score = GREATEST(submissions.best_score, (p_attempt->>'score')::NUMERIC),
-            history = submissions.history || p_attempt;
+            history = submissions.history || p_attempt,
+            updated_at = NOW();
     END;
     $$;
     
-    -- This function allows an admin to PERMANENTLY delete a team and free up their email.
-    CREATE OR REPLACE FUNCTION delete_team(p_user_id UUID)
+    -- DELETE_TEAM: Allows an admin to PERMANENTLY delete a team and free up their email.
+    CREATE OR REPLACE FUNCTION public.delete_team(p_user_id UUID)
     RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -145,16 +145,44 @@ Follow these instructions to set up and run the project using Supabase.
     DECLARE
         requesting_user_role TEXT;
     BEGIN
-        -- First, verify the calling user IS an admin from our public.users table.
+        -- Verify the calling user IS an admin from our public.users table.
         SELECT role INTO requesting_user_role FROM public.users WHERE id = auth.uid();
-
         IF requesting_user_role <> 'admin' THEN
             RAISE EXCEPTION 'You do not have permission to delete a team.';
         END IF;
 
-        -- If the check passes, proceed with the permanent deletion.
-        -- This function PERMANENTLY deletes the user and all their data, allowing the email to be reused.
+        -- If the check passes, proceed with permanent deletion from the auth schema.
+        -- This function PERMANENTLY deletes the user and all their data (due to CASCADE), allowing the email to be reused.
         PERFORM auth.admin_delete_user(p_user_id);
+    END;
+    $$;
+
+    -- CLEANUP_ORPHAN_AUTH_USERS: A maintenance function for admins to remove stuck accounts.
+    -- This finds users in `auth.users` that do not have a corresponding profile in `public.users`
+    -- (usually from a failed registration) and purges them.
+    CREATE OR REPLACE FUNCTION public.cleanup_orphan_auth_users()
+    RETURNS TABLE (deleted_user_id UUID, status TEXT)
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public
+    AS $$
+    DECLARE
+        requesting_user_role TEXT;
+        orphan_id UUID;
+    BEGIN
+        -- Verify the calling user IS an admin.
+        SELECT role INTO requesting_user_role FROM public.users WHERE id = auth.uid();
+        IF requesting_user_role <> 'admin' THEN
+            RAISE EXCEPTION 'You do not have permission to perform this action.';
+        END IF;
+
+        -- Find and delete orphans
+        FOR orphan_id IN
+            SELECT id FROM auth.users WHERE id NOT IN (SELECT id FROM public.users)
+        LOOP
+            PERFORM auth.admin_delete_user(orphan_id);
+            RETURN QUERY SELECT orphan_id, 'deleted';
+        END LOOP;
     END;
     $$;
 
@@ -164,6 +192,7 @@ Follow these instructions to set up and run the project using Supabase.
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
+    SET search_path = public
     AS $$
     BEGIN
         INSERT INTO public.users (id, username, email, role, team_name)
@@ -179,7 +208,9 @@ Follow these instructions to set up and run the project using Supabase.
     $$;
 
     -- This trigger calls the function after a user signs up.
-    CREATE OR REPLACE TRIGGER on_auth_user_created
+    -- Drop the trigger if it exists to ensure it's fresh
+    DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+    CREATE TRIGGER on_auth_user_created
         AFTER INSERT ON auth.users
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
     ```
