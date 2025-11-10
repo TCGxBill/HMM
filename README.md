@@ -1,82 +1,208 @@
-# PAIC Live Scoreboard
+# PAIC Live Scoreboard (Supabase Edition)
 
-A modern, real-time web application designed to display a live scoreboard for programming contests, styled after the International Collegiate Programming Contest (ICPC). It includes an integrated Gemini-powered chatbot for assistance, robust admin controls, and a full suite of features for contestants. This application is bilingual, supporting both English and Vietnamese.
+A modern, real-time web application designed to display a live scoreboard for programming contests, styled after the International Collegiate Programming Contest (ICPC). This version is powered by **Supabase** for its backend, authentication, and real-time database capabilities. It includes an integrated Gemini-powered chatbot for assistance, robust admin controls, and a full suite of features for contestants. This application is bilingual, supporting both English and Vietnamese.
+
+## Setup and Installation
+
+Follow these instructions to set up and run the project using Supabase.
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or later recommended)
+- [npm](https://www.npmjs.com/)
+- A [Supabase](https://supabase.com/) account (free tier is sufficient)
+
+### Supabase Setup
+
+1.  **Create a New Supabase Project:**
+    - Go to your [Supabase Dashboard](https://app.supabase.com/) and create a new project.
+    - Save your database password somewhere secure.
+
+2.  **Get API Credentials:**
+    - In your new project, navigate to **Project Settings** (the gear icon) > **API**.
+    - You will need two values from this page:
+        - The **Project URL**.
+        - The **Project API Key** (the `anon` `public` one).
+
+3.  **Set Up Database Schema and Functions:**
+    - Go to the **SQL Editor** in the Supabase dashboard.
+    - Click **+ New query**.
+    - Copy the **entire contents** of the SQL script below and paste it into the query window.
+    - Click **RUN**. This single script will create your tables, enable real-time updates, set up security policies, and create the necessary server-side functions.
+
+    ```sql
+    -- 1. USERS TABLE for public profile information
+    -- This table will store non-sensitive user data and is linked to the master auth.users table.
+    CREATE TABLE users (
+        id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'contestant')),
+        team_name VARCHAR(255) UNIQUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    -- Enable Row Level Security
+    ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+    -- 2. SUBMISSIONS TABLE
+    -- This table stores all submission data for each user/task.
+    CREATE TABLE submissions (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+        task_id VARCHAR(50) NOT NULL,
+        best_score NUMERIC(5, 2) DEFAULT 0,
+        history JSONB, -- Stores an array of all attempts: [{ "score": 85.5, "timestamp": "..." }]
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, task_id)
+    );
+    -- Enable Row Level Security
+    ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
+
+    -- 3. RLS POLICIES (Row Level Security)
+    -- These policies define who can access or modify the data.
+    -- Users can see all other users' public profiles.
+    CREATE POLICY "Allow public read access to users" ON users FOR SELECT USING (true);
+    -- Users can only insert their own profile.
+    CREATE POLICY "Allow users to insert their own profile" ON users FOR INSERT WITH CHECK (auth.uid() = id);
+    -- Users can see all submissions.
+    CREATE POLICY "Allow public read access to submissions" ON submissions FOR SELECT USING (true);
+    -- Users can only insert/update their own submissions (delegated to RPC function).
+    -- We don't need direct insert/update policies as we'll use a secure function.
+
+    -- 4. REALTIME SETUP
+    -- Enable real-time updates for the 'users' and 'submissions' tables.
+    ALTER PUBLICATION supabase_realtime ADD TABLE users, submissions;
+
+    -- 5. SERVER-SIDE FUNCTIONS (RPC)
+    -- This function securely gets the full scoreboard data, just like the old backend API.
+    CREATE OR REPLACE FUNCTION get_scoreboard()
+    RETURNS TABLE (
+        id UUID,
+        "teamName" TEXT,
+        "totalScore" NUMERIC,
+        solved BIGINT,
+        submissions JSON
+    )
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+        RETURN QUERY
+        SELECT
+            u.id,
+            u.team_name as "teamName",
+            COALESCE(
+                (SELECT SUM(s_sum.best_score) FROM submissions s_sum WHERE s_sum.user_id = u.id), 0
+            ) as "totalScore",
+            COALESCE(
+                (SELECT COUNT(*) FROM submissions s_count WHERE s_count.user_id = u.id AND s_count.best_score > 0), 0
+            ) as solved,
+            COALESCE(
+                (
+                    SELECT json_agg(json_build_object(
+                        'taskId', s_inner.task_id,
+                        'score', s_inner.best_score,
+                        'attempts', jsonb_array_length(s_inner.history),
+                        'history', s_inner.history
+                    ))
+                    FROM submissions s_inner WHERE s_inner.user_id = u.id
+                ), '[]'::json
+            ) as submissions
+        FROM users u
+        WHERE u.role = 'contestant'
+        GROUP BY u.id
+        ORDER BY "totalScore" DESC;
+    END;
+    $$;
+
+    -- This function handles a new submission securely.
+    CREATE OR REPLACE FUNCTION submit_solution(
+        p_user_id UUID,
+        p_task_id TEXT,
+        p_attempt JSONB
+    )
+    RETURNS void
+    LANGUAGE plpgsql
+    SECURITY DEFINER -- This allows the function to run with elevated privileges
+    AS $$
+    BEGIN
+        INSERT INTO submissions (user_id, task_id, best_score, history)
+        VALUES (p_user_id, p_task_id, (p_attempt->>'score')::NUMERIC, jsonb_build_array(p_attempt))
+        ON CONFLICT (user_id, task_id) DO UPDATE 
+        SET 
+            best_score = GREATEST(submissions.best_score, (p_attempt->>'score')::NUMERIC),
+            history = submissions.history || p_attempt;
+    END;
+    $$;
+    
+    -- This function allows an admin to delete a team.
+    CREATE OR REPLACE FUNCTION delete_team(p_user_id UUID)
+    RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+    DECLARE
+        requesting_user_role TEXT;
+    BEGIN
+        -- Check if the user calling this function is an admin
+        SELECT role INTO requesting_user_role FROM public.users WHERE id = auth.uid();
+
+        IF requesting_user_role = 'admin' THEN
+            -- If admin, proceed to delete the user from the master auth table.
+            -- The 'ON DELETE CASCADE' in our table definitions will handle cleanup.
+            DELETE FROM auth.users WHERE id = p_user_id;
+        ELSE
+            -- If not an admin, raise an error.
+            RAISE EXCEPTION 'You do not have permission to delete a team.';
+        END IF;
+    END;
+    $$;
+    ```
+
+
+### Frontend Setup
+
+1.  **Configure Environment Variables:**
+    - In the project's **root** directory, create a new file named `.env`.
+    - Add the Supabase URL and Key you saved earlier. **The `VITE_` prefix is important!**
+      ```env
+      VITE_SUPABASE_URL="YOUR_SUPABASE_PROJECT_URL"
+      VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
+      API_KEY="YOUR_GEMINI_API_KEY"
+      ```
+    - Replace the placeholder values with your actual credentials. The `API_KEY` is your Google Gemini API key, which is required for the Chatbot and Analysis features.
+
+2.  **Install Dependencies & Run:**
+    - Open your terminal in the project's **root** directory.
+    - Install the necessary packages:
+      ```bash
+      npm install
+      ```
+    - Start the development server:
+      ```bash
+      npm run dev
+      ```
+    - The application will now be running, typically at `http://localhost:5173`, and will connect to your Supabase project for all backend operations.
 
 ## Features
 
-- **Live Scoreboard**: Automatically updates and ranks teams based on total score in real-time. The top three teams are highlighted with gold, silver, and bronze themes.
-- **Multi-Language Support**: Seamlessly switch between English and Vietnamese with a persistent language preference.
-- **Role-Based Authentication**: Separate login and registration flows for Contestants and Admins, with unique username and team name validation.
+- **Live Scoreboard**: Powered by Supabase Realtime, the scoreboard instantly updates and ranks teams. The top three teams are highlighted.
+- **Multi-Language Support**: Seamlessly switch between English and Vietnamese.
+- **Role-Based Authentication**: Secure login and registration flows via Supabase Auth.
 - **Contestant Panel**:
-    - Submit solutions by uploading CSV files for specific tasks.
-    - View a detailed submission history for each task, including scores and timestamps for every attempt.
-    - Real-time scoring feedback.
+    - Submit solutions by uploading CSV files.
+    - View a detailed submission history for each task.
 - **Admin Panel**:
     - **Contest Control**: Start, pause ('Live'), or end the contest.
     - **Task Management**: Dynamically add or delete contest tasks.
-    - **Answer Key Management**: Upload individual answer key files for each task and toggle their visibility (Public/Private).
-    - **Team Management**: Delete teams and all their associated results from the contest.
+    - **Answer Key Management**: Upload answer keys and control their scoring visibility.
+    - **Team Management**: Delete teams and all their associated data directly from the UI.
 - **Gemini AI Integration**:
-    - **AI Chatbot**: An assistant trained to answer questions about competitive programming, NLP concepts, and contest strategies.
-    - **AI Performance Analysis**: Admins and contestants can get an instant, AI-generated performance breakdown and strategic advice for any team with a single click.
-- **Data Visualization**:
-    - A dynamic bar chart displays the scores of the top 5 teams.
-    - A stats bar provides an at-a-glance overview of key contest metrics (status, total submissions, highest score, etc.).
-- **Modern UI/UX**:
-    - Responsive design that works on all screen sizes.
-    - A sleek dark theme with "glassmorphism" effects.
-    - Toast notifications for user feedback.
-    - Modals for viewing team details, AI analysis, and editing tasks/teams.
-- **Offline & Data Persistence**: User session, language preference, and contest state are persisted in the browser's local storage.
+    - **AI Chatbot**: An assistant for questions about competitive programming.
+    - **AI Performance Analysis**: Get an instant, AI-generated performance breakdown for any team.
+- **Data Visualization**: Dynamic bar chart for top teams and a stats overview bar.
+- **Modern UI/UX**: Responsive dark theme with toast notifications and modals.
+- **Data Persistence**: User session and language preference are persisted.
 
 ## How to Use
 
-### For Contestants
-
-1.  **Registration**:
-    - On the login page, select the "Contestant" tab.
-    - Click the "Register" link.
-    - Fill in your desired username, email, password, and a **unique team name**.
-    - Click "Register". After a successful registration, you will be prompted to log in.
-
-2.  **Login**:
-    - Select the "Contestant" tab.
-    - Enter your username and password.
-    - Click "Login".
-
-3.  **Submitting a Solution**:
-    - In the "Submit Your Solution" panel, select the task you are solving from the dropdown menu.
-    - Drag and drop your `predictions.csv` file into the upload area, or click to select it. The file must have the format: `category_id,content,overall_band_score`.
-    - Click the "Submit Solution" button. You will receive a toast notification with your score.
-
-4.  **Viewing History**:
-    - In the "My Submission History" section, you can see your best score and total attempts for each task you've submitted to.
-    - Click the chevron icon next to any task to expand and see a detailed log of every attempt with its score and timestamp.
-
-### For Administrators
-
-1.  **Login**:
-    - On the login page, select the "Admin" tab.
-    - Enter your admin username and password.
-    - Click "Login".
-
-2.  **Managing the Contest**:
-    - **Contest Status**: Use the buttons ("Not Started", "Live", "Finished") to control the contest state. Submissions are only accepted when the status is "Live".
-    - **Manage Tasks**: Add a new task by typing its name and clicking "Add Task". Delete a task using the trash icon.
-    - **Manage Answer Keys**:
-        - For each task, click the upload icon to select and upload the corresponding answer key CSV file. The file must have the format: `category_id,content,overall_band_score`.
-        - Use the "Private/Public" toggle to control whether the answer key is used for scoring. A key must be uploaded and set to 'Public' for submissions on that task to be scored.
-    - **Manage Teams**: Click the delete icon next to a team's name to permanently remove them and their submissions from the contest.
-
-### General Features
-
-- **Language Selection**: Use the dropdown menu in the top-right of the header to switch between English and Vietnamese.
-- **AI Chatbot**: Click the chat icon in the bottom-right corner to open the Gemini Assistant. Ask it questions related to the contest or NLP.
-- **AI Analysis**: On the scoreboard, click the sparkle icon (✨) next to any team's name to open a modal with an AI-generated performance analysis.
-
-## Technologies Used
-
-- **Frontend**: React, TypeScript, Tailwind CSS
-- **AI**: Google Gemini API
-- **Backend (Mock)**: MockAPI.io for user authentication and data persistence.
-- **Modules**: `react-dropzone` for file uploads.
+The application's usage remains the same as before. The primary difference is that user registration now creates accounts directly in your Supabase project, which you can manage from the Supabase dashboard under **Authentication**.

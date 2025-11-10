@@ -6,11 +6,7 @@ import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 import { useTranslation } from './LanguageContext';
 import { calculateScore, parseTaskKey } from '../services/scoringService';
-import * as apiService from '../services/apiService';
-import { io } from 'socket.io-client';
-
-// The backend server URL
-const BACKEND_URL = 'http://localhost:8080';
+import { supabase } from '../services/supabaseClient';
 
 interface ContestContextType {
   teams: Team[];
@@ -80,7 +76,14 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-        const scoreboardData = await apiService.getScoreboard();
+        const { data, error } = await supabase.rpc('get_scoreboard');
+        if (error) throw error;
+        
+        const scoreboardData = data.map((team: any) => ({
+          ...team,
+          name: team.teamName, // Map teamName from RPC to name for the Team type
+        }));
+        
         const rankedTeams = reRankTeams(scoreboardData);
         setTeams(rankedTeams);
     } catch (error) {
@@ -96,49 +99,27 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     if (user) {
         fetchInitialData();
 
-        const socket = io(BACKEND_URL);
-
-        socket.on('connect', () => {
-            console.log('Successfully connected to WebSocket server.');
-        });
-
-        socket.on('scoreboard:update', (updatedScoreboard: Team[]) => {
-            addToast(t('toastScoreboardUpdated'), 'info');
-            const newTeamsData = reRankTeams(updatedScoreboard);
-            
-            setTeams(currentTeams => {
-                return newTeamsData.map(newTeam => {
-                    const oldTeam = currentTeams.find(t => t.id === newTeam.id);
-                    if (!oldTeam) {
-                        return { ...newTeam, submissions: newTeam.submissions.map(s => ({...s, recentlyUpdated: true})) };
-                    }
-
-                    return {
-                        ...newTeam,
-                        submissions: newTeam.submissions.map(newSub => {
-                            const oldSub = oldTeam.submissions.find(s => s.taskId === newSub.taskId);
-                            if (!oldSub || oldSub.score !== newSub.score || oldSub.attempts !== newSub.attempts) {
-                                return { ...newSub, recentlyUpdated: true };
-                            }
-                            return newSub;
-                        })
-                    };
-                });
-            });
-        });
-        
-        socket.on('disconnect', () => {
-            console.log('Disconnected from WebSocket server.');
-        });
+        const channel = supabase
+            .channel('scoreboard-updates')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, payload => {
+                console.log('Submission change received!', payload);
+                addToast(t('toastScoreboardUpdated'), 'info');
+                fetchInitialData(); // Refetch all data on any change
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `role=eq.contestant` }, payload => {
+                 console.log('Contestant user change received!', payload);
+                 fetchInitialData(); // A new contestant registered, or a team was deleted/updated
+            })
+            .subscribe();
 
         return () => {
-            socket.disconnect();
+            supabase.removeChannel(channel);
         };
     } else {
         setIsLoading(false);
         setTeams([]);
     }
-  }, [user, fetchInitialData, setTeams, reRankTeams, addToast, t]);
+  }, [user, fetchInitialData, addToast, t]);
   
   const contestStats = useMemo(() => {
     let totalSubmissions = 0;
@@ -186,9 +167,14 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         
         const newAttempt = { score, timestamp: Date.now() };
 
-        // The backend will receive this submission, process it, and then broadcast the new scoreboard via WebSocket.
-        // No need to call a refresh function here.
-        await apiService.submitSolution(user.id, taskId, newAttempt);
+        const { error } = await supabase.rpc('submit_solution', {
+            p_user_id: user.id,
+            p_task_id: taskId,
+            p_attempt: newAttempt
+        });
+
+        if (error) throw error;
+        // Realtime subscription will handle updating the UI
 
     } catch (error: any) {
         addToast(t(error.message) || error.message, 'error');
@@ -242,9 +228,11 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
 
     try {
-        await apiService.deleteTeam(teamId);
+        const { error } = await supabase.rpc('delete_team', { p_user_id: teamId });
+        if (error) throw error;
+
         addToast(t('toastTeamDeleted', { teamName: teamToDelete.name }), 'success');
-        // The backend will broadcast the change via WebSocket. No refresh needed.
+        // Realtime subscription will handle updating the UI
     } catch (error) {
         addToast(t('error.deleteTeamGeneral'), 'error');
         console.error('Error deleting team:', error);
@@ -272,13 +260,12 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const resetContest = () => {
-    // In a real app, this would call a backend endpoint to reset data.
-    // The backend would then broadcast the reset state.
+    // This only resets local state. The remote DB is unaffected.
     setTasks(mockTasks);
     setContestStatus('Live');
     setMasterKey(null);
     addToast(t('toastContestReset'), 'info');
-    fetchInitialData(); // Manually fetch for now as a mock for the broadcast.
+    fetchInitialData(); // Refetch from DB to get the current server state.
   };
 
   return (
