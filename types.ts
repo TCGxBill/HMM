@@ -20,6 +20,7 @@ export interface Team {
   solved: number;
   totalScore: number;
   submissions: Submission[];
+  lastSolveTimestamp?: number; // Timestamp for tie-breaking
   // This will hold the original API user ID for updates
   apiUserId?: string; 
 }

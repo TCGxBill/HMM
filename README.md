@@ -33,9 +33,10 @@ Follow these instructions to set up and run the project using Supabase.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - COMPLETE SUPABASE SETUP SCRIPT
-    -- Version: 1.2
+    -- Version: 1.3
     -- Description: This script sets up all necessary tables, policies, real-time replication,
     --              and robust server-side functions for user creation, deletion, and cleanup.
+    --              Includes tie-breaking logic in scoreboard ranking.
     -- ================================================================================================
 
     -- 1. USERS TABLE for public profile information
@@ -85,35 +86,76 @@ Follow these instructions to set up and run the project using Supabase.
 
     -- 5. SERVER-SIDE FUNCTIONS (RPC)
 
-    -- GET_SCOREBOARD: Securely gets the full scoreboard data.
+    -- GET_SCOREBOARD: Securely gets the full scoreboard data with tie-breaking logic.
     CREATE OR REPLACE FUNCTION public.get_scoreboard()
     RETURNS TABLE (
         id UUID,
         "teamName" TEXT,
         "totalScore" NUMERIC,
         solved BIGINT,
-        submissions JSON
+        submissions JSON,
+        "lastSolveTimestamp" BIGINT -- For tie-breaking
     )
     LANGUAGE plpgsql
     AS $$
     BEGIN
         RETURN QUERY
+        WITH team_scores AS (
+            -- Step 1: Calculate total score, solved count, and last solve time for each team
+            SELECT
+                u.id,
+                u.team_name,
+                COALESCE(SUM(s.best_score), 0) as total_score,
+                COALESCE(COUNT(s.id) FILTER (WHERE s.best_score > 0), 0) as solved_count,
+                MAX(
+                    -- This subquery finds the timestamp of the FIRST attempt that achieved the best score for a task
+                    (
+                        SELECT (elem->>'timestamp')::BIGINT
+                        FROM jsonb_array_elements(s.history) AS elem
+                        WHERE (elem->>'score')::NUMERIC = s.best_score
+                        ORDER BY (elem->>'timestamp')::BIGINT ASC
+                        LIMIT 1
+                    )
+                ) AS last_solve_timestamp
+            FROM
+                public.users u
+            LEFT JOIN
+                public.submissions s ON u.id = s.user_id
+            WHERE
+                u.role = 'contestant'
+            GROUP BY
+                u.id
+        ),
+        team_submissions AS (
+            -- Step 2: Aggregate submission details for JSON output
+            SELECT
+                s.user_id,
+                json_agg(json_build_object(
+                    'taskId', s.task_id,
+                    'score', s.best_score,
+                    'attempts', jsonb_array_length(s.history),
+                    'history', s.history
+                )) AS submissions_json
+            FROM
+                public.submissions s
+            GROUP BY
+                s.user_id
+        )
+        -- Step 3: Join everything and order with tie-breaking
         SELECT
-            u.id,
-            u.team_name::text as "teamName",
-            COALESCE((SELECT SUM(s_sum.best_score) FROM public.submissions s_sum WHERE s_sum.user_id = u.id), 0) as "totalScore",
-            COALESCE((SELECT COUNT(*) FROM public.submissions s_count WHERE s_count.user_id = u.id AND s_count.best_score > 0), 0) as solved,
-            COALESCE((SELECT json_agg(json_build_object(
-                        'taskId', s_inner.task_id,
-                        'score', s_inner.best_score,
-                        'attempts', jsonb_array_length(s_inner.history),
-                        'history', s_inner.history
-                    ))
-                    FROM public.submissions s_inner WHERE s_inner.user_id = u.id), '[]'::json) as submissions
-        FROM public.users u
-        WHERE u.role = 'contestant'
-        GROUP BY u.id
-        ORDER BY "totalScore" DESC;
+            ts.id,
+            ts.team_name::text AS "teamName",
+            ts.total_score AS "totalScore",
+            ts.solved_count AS solved,
+            COALESCE(sub.submissions_json, '[]'::json) AS submissions,
+            ts.last_solve_timestamp as "lastSolveTimestamp"
+        FROM
+            team_scores ts
+        LEFT JOIN
+            team_submissions sub ON ts.id = sub.user_id
+        ORDER BY
+            "totalScore" DESC,
+            "lastSolveTimestamp" ASC NULLS LAST;
     END;
     $$;
 

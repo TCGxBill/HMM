@@ -67,9 +67,18 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         })),
     }));
     
-    // 3. Sort teams by totalScore and assign rank
+    // 3. Sort teams by totalScore (primary) and lastSolveTimestamp (secondary tie-breaker)
     return teamsWithBestScores
-      .sort((a, b) => b.totalScore - a.totalScore)
+      .sort((a, b) => {
+        if (a.totalScore !== b.totalScore) {
+          return b.totalScore - a.totalScore;
+        }
+        // If scores are equal, the one with the lower (earlier) timestamp wins.
+        // Teams with no solves (null timestamp) are ranked last among ties.
+        const timeA = a.lastSolveTimestamp ?? Infinity;
+        const timeB = b.lastSolveTimestamp ?? Infinity;
+        return timeA - timeB;
+      })
       .map((team, index) => ({ ...team, rank: index + 1 }));
   }, [tasks]);
   
