@@ -69,17 +69,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw new Error("Invalid username or password.");
         }
 
-        // FIX: Replaced 'signInWithPassword' with 'signIn' for compatibility with older Supabase versions.
-        // Also adjusted destructuring of the result from '{ data, error }' to '{ user, error }'.
-        const { user: authUser, error } = await supabase.auth.signIn({
+        // FIX: Replaced 'signIn' with 'signInWithPassword' for email/password authentication, and corrected response destructuring.
+        const { data, error } = await supabase.auth.signInWithPassword({
             email: userProfile.email,
             password,
         });
 
         if (error) throw error;
-        if (!authUser) return null;
+        if (!data.user) return null;
 
-        const { data: loggedInProfile } = await supabase.from('users').select('*').eq('id', authUser.id).single();
+        const { data: loggedInProfile } = await supabase.from('users').select('*').eq('id', data.user.id).single();
         
         if (!loggedInProfile) return null;
 
@@ -101,15 +100,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const register = useCallback(async (userData: Omit<User, 'id'>): Promise<User> => {
       const { email, password, username, role, teamName } = userData;
-      // FIX: The error indicating 'signUp' doesn't exist is likely an initialization issue.
-      // Adjusted result destructuring for compatibility with older Supabase versions from '{ data: authData }' to '{ user }'.
-      const { user: authUser, error: signUpError } = await supabase.auth.signUp({ email, password });
+      // FIX: Corrected destructuring for the 'signUp' response to access the user object via the 'data' property.
+      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
 
       if (signUpError) throw new Error(signUpError.message);
-      if (!authUser) throw new Error("Registration did not return a user.");
+      if (!data.user) throw new Error("Registration did not return a user.");
 
       const { error: profileError } = await supabase.from('users').insert({
-          id: authUser.id,
+          id: data.user.id,
           username,
           email,
           role,
@@ -124,7 +122,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       const registeredUser: User = {
-          id: authUser.id,
+          id: data.user.id,
           ...userData,
       };
       return registeredUser;
