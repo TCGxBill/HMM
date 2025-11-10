@@ -156,7 +156,39 @@ Follow these instructions to set up and run the project using Supabase.
         END IF;
     END;
     $$;
+
+    -- 6. TRIGGER FOR AUTOMATIC PROFILE CREATION
+    -- This function automatically creates a user profile upon registration.
+    CREATE OR REPLACE FUNCTION public.handle_new_user()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    AS $$
+    BEGIN
+        INSERT INTO public.users (id, username, email, role, team_name)
+        VALUES (
+            new.id,
+            new.raw_user_meta_data->>'username',
+            new.email,
+            new.raw_user_meta_data->>'role',
+            new.raw_user_meta_data->>'team_name'
+        );
+        RETURN new;
+    END;
+    $$;
+
+    -- This trigger calls the function after a user signs up.
+    CREATE OR REPLACE TRIGGER on_auth_user_created
+        AFTER INSERT ON auth.users
+        FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
     ```
+    
+4. **Optional: Disable Email Confirmation**
+    For a smoother experience during a time-limited contest, you may want to disable email confirmation so users can log in immediately after registering.
+    - In your Supabase project, navigate to **Authentication** > **Providers**.
+    - Click on **Email**.
+    - Toggle off the **Confirm email** setting.
+    - **Note:** Disabling this is less secure. For a real-world application, it's recommended to keep email confirmation enabled.
 
 
 ### Frontend Setup

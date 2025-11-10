@@ -100,31 +100,44 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const register = useCallback(async (userData: Omit<User, 'id'>): Promise<User> => {
       const { email, password, username, role, teamName } = userData;
-      // FIX: Corrected destructuring for the 'signUp' response to access the user object via the 'data' property.
-      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
 
-      if (signUpError) throw new Error(signUpError.message);
-      if (!data.user) throw new Error("Registration did not return a user.");
-
-      const { error: profileError } = await supabase.from('users').insert({
-          id: data.user.id,
-          username,
+      // Pass profile data during sign-up. A database trigger will handle inserting it
+      // into the public.users table. This makes registration an atomic operation.
+      const { data, error: signUpError } = await supabase.auth.signUp({
           email,
-          role,
-          team_name: teamName,
+          password,
+          options: {
+              data: {
+                  username,
+                  role,
+                  team_name: teamName,
+              }
+          }
       });
-      
-      if (profileError) {
-          console.error("Failed to create user profile after sign up:", profileError);
-          // Ideally, we'd delete the auth.users entry here, but that requires admin rights.
-          // The user will have an auth entry but no profile and won't be able to log in.
-          throw new Error("Could not create user profile. Username or team name might be taken.");
+
+      if (signUpError) {
+          // The trigger function (handle_new_user) attempts to insert into public.users.
+          // If it fails due to a unique constraint, the error message from PostgreSQL
+          // is passed back. We can inspect it to provide a more specific error.
+          if (signUpError.message.includes('duplicate key value violates unique constraint')) {
+              if (signUpError.message.includes('users_username_key')) {
+                throw new Error('error.usernameExists');
+              }
+              if (signUpError.message.includes('users_team_name_key')) {
+                throw new Error('error.teamNameExists');
+              }
+          }
+          throw new Error(signUpError.message);
       }
 
+      if (!data.user) throw new Error("Registration did not return a user.");
+
+      // With the trigger in place, we don't need to manually insert into public.users.
       const registeredUser: User = {
           id: data.user.id,
           ...userData,
       };
+      
       return registeredUser;
   }, []);
 
