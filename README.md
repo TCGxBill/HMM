@@ -46,9 +46,8 @@ Follow these instructions to set up and run the project using Supabase.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - COMPLETE SUPABASE SETUP SCRIPT
-    -- Version: 1.5
-    -- Description: This version refactors the key upload mechanism for performance. The `upsert_task_key`
-    --              RPC function is removed in favor of a new Edge Function triggered by Supabase Storage.
+    -- Version: 1.6
+    -- Description: Adds performance indexes. Removes obsolete `upsert_task_key` RPC.
     -- ================================================================================================
 
     -- 1. USERS TABLE for public profile information
@@ -92,14 +91,12 @@ Follow these instructions to set up and run the project using Supabase.
     -- SUBMISSIONS
     CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
     -- TASK_KEYS (VERY RESTRICTIVE)
-    -- This policy is now primarily for the Edge Function (running with service_role) and admin checks.
     CREATE POLICY "Allow admins to manage task keys" ON public.task_keys FOR ALL
         USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
         WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
 
 
     -- 5. REALTIME SETUP
-    -- Enable real-time updates for relevant tables.
     DO $$
     BEGIN
       ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions, public.task_keys;
@@ -157,7 +154,6 @@ Follow these instructions to set up and run the project using Supabase.
     $$;
 
     -- SUBMIT_SOLUTION (REMAINS THE SAME)
-    -- This function reads pre-parsed data from task_keys, so it remains fast.
     CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_submission_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -173,17 +169,13 @@ Follow these instructions to set up and run the project using Supabase.
         v_key_row JSONB;
         v_new_attempt JSONB;
     BEGIN
-        -- Fetch the answer key (SECURITY DEFINER context allows this)
         SELECT tk.key_data INTO v_key_data FROM public.task_keys tk WHERE tk.task_id = p_task_id;
-
         IF v_key_data IS NULL THEN
             RAISE EXCEPTION 'The answer key for task % has not been set.', p_task_id;
         END IF;
-
         IF jsonb_array_length(p_submission_data) <> jsonb_array_length(v_key_data) THEN
             RAISE EXCEPTION 'Submission has % data rows, but answer key has %. Row counts must match.', jsonb_array_length(p_submission_data), jsonb_array_length(v_key_data);
         END IF;
-        
         v_total_rows := jsonb_array_length(v_key_data);
         IF v_total_rows = 0 THEN
             v_score := 0;
@@ -197,9 +189,7 @@ Follow these instructions to set up and run the project using Supabase.
             END LOOP;
             v_score := (v_correct_predictions::NUMERIC / v_total_rows::NUMERIC) * 100;
         END IF;
-
         v_new_attempt := jsonb_build_object('score', v_score, 'timestamp', (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT);
-
         INSERT INTO submissions (user_id, task_id, best_score, history)
         VALUES (p_user_id, p_task_id, v_score, jsonb_build_array(v_new_attempt))
         ON CONFLICT (user_id, task_id) DO UPDATE 
@@ -294,7 +284,6 @@ Follow these instructions to set up and run the project using Supabase.
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
     -- 8. STORAGE-BASED TRIGGER FOR PROCESSING TASK KEYS (NEW)
-    -- This function will be called by our Edge Function, not a traditional DB trigger.
     CREATE OR REPLACE FUNCTION public.internal_upsert_task_key(p_task_id TEXT, p_key_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -332,7 +321,6 @@ To handle answer key processing efficiently without slowing down the app, we use
 
     // Helper function to parse CSV content
     const parseCSV = (csvString: string): string[][] => {
-        // (Full parsing logic as in scoringService.ts)
         if (!csvString) return [];
         const rows: string[][] = [];
         let currentRow: string[] = [];
@@ -388,8 +376,6 @@ To handle answer key processing efficiently without slowing down the app, we use
       try {
         const { record } = await req.json();
         
-        // This function should be triggered by a storage update, but for robustness,
-        // we check if we have a record to process.
         if (!record || !record.name) {
           throw new Error("Invalid request payload. Expected storage object record.");
         }
@@ -402,7 +388,6 @@ To handle answer key processing efficiently without slowing down the app, we use
         const filePath = record.name;
         const taskId = filePath.split('.')[0];
 
-        // Download the file from storage
         const { data: file, error: downloadError } = await supabaseAdmin.storage
           .from('task-keys')
           .download(filePath);
@@ -419,7 +404,6 @@ To handle answer key processing efficiently without slowing down the app, we use
             throw new Error("Malformed key file. Expected 'category_id,content,overall_band_score'.");
         }
 
-        // Use the internal RPC function to upsert the parsed key
         const { error: rpcError } = await supabaseAdmin.rpc('internal_upsert_task_key', {
           p_task_id: taskId,
           p_key_data: keyData,
@@ -469,6 +453,21 @@ To handle answer key processing efficiently without slowing down the app, we use
 2.  **Install Dependencies & Run:**
     - `npm install`
     - `npm run dev`
+
+### Performance Optimizations (Recommended)
+
+To ensure the scoreboard loads quickly, especially with many teams, it's highly recommended to add database indexes.
+
+1. Go to the **SQL Editor** in your Supabase dashboard.
+2. Run the following commands one by one. This will make lookups on the `users` and `submissions` tables much faster.
+
+```sql
+-- Index to speed up filtering for contestants
+CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
+
+-- Index to speed up joining submissions to users
+CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON public.submissions(user_id);
+```
 
 ## Features
 
