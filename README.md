@@ -350,12 +350,12 @@ Làm theo các bước sau để thiết lập và chạy dự án.
 2.  **Tạo Edge Function:**
     -   Tạo các thư mục cần thiết: `mkdir -p supabase/functions/process-key-upload`
     -   Tạo một tệp mới có tên `supabase/functions/process-key-upload/index.ts`.
-    -   Dán đoạn mã sau vào tệp vừa tạo:
+    -   Dán đoạn mã **ĐÃ CẬP NHẬT** sau vào tệp vừa tạo:
 
     ```typescript
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-    // Hàm phụ trợ để phân tích nội dung CSV
+    // Hàm phụ trợ để phân tích nội dung CSV một cách an toàn
     const parseCSV = (csvString: string): string[][] => {
         if (!csvString) return [];
         const rows: string[][] = [];
@@ -410,19 +410,34 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     // Hàm chính xử lý request
     Deno.serve(async (req) => {
       try {
-        const { record } = await req.json();
-        
-        if (!record || !record.name) {
-          throw new Error("Invalid request payload. Expected storage object record.");
+        const payload = await req.json();
+
+        // **KIỂM TRA BẢO VỆ**: Đảm bảo payload hợp lệ từ webhook của storage.
+        if (payload.type !== 'INSERT' || !payload.record || payload.record.bucket_id !== 'task-keys' || !payload.record.name) {
+          console.log('Ignoring irrelevant webhook event:', payload);
+          return new Response(JSON.stringify({ message: 'Ignoring irrelevant event' }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        const record = payload.record;
+        const filePath = record.name;
+        const taskId = filePath.split('.')[0];
+
+        // **KIỂM TRA BẢO VỆ**: Bỏ qua các tệp giữ chỗ (placeholder) hoặc file không có tên hợp lệ.
+        if (!taskId || taskId.trim() === '' || taskId.startsWith('.')) {
+            console.log(`Ignoring file with invalid name: ${filePath}`);
+            return new Response(JSON.stringify({ message: `Ignoring file with invalid name` }), {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            });
         }
 
         const supabaseAdmin = createClient(
           Deno.env.get('SUPABASE_URL') ?? '',
           Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
-
-        const filePath = record.name;
-        const taskId = filePath.split('.')[0];
 
         const { data: file, error: downloadError } = await supabaseAdmin.storage
           .from('task-keys')
@@ -436,6 +451,14 @@ Làm theo các bước sau để thiết lập và chạy dự án.
         const startIndex = rows.length > 0 && rows[0][0].toLowerCase() === 'category_id' ? 1 : 0;
         const keyData = rows.slice(startIndex);
         
+        if (keyData.length === 0) {
+            console.warn(`Parsed empty key data from file: ${filePath}. Not updating database.`);
+            return new Response(JSON.stringify({ message: `Parsed empty key data from file: ${filePath}` }), {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            });
+        }
+
         if (keyData.some(row => row.length < 3)) {
             throw new Error("Malformed key file. Expected 'category_id,content,overall_band_score'.");
         }
@@ -452,9 +475,10 @@ Làm theo các bước sau để thiết lập và chạy dự án.
           status: 200,
         });
       } catch (error) {
+        console.error('Error processing key upload:', error.message);
         return new Response(JSON.stringify({ error: error.message }), {
           headers: { 'Content-Type': 'application/json' },
-          status: 400,
+          status: 500,
         });
       }
     });
