@@ -1,56 +1,89 @@
-# PAIC Live Scoreboard (Supabase Edition)
+# Bảng điểm trực tiếp PAIC (Phiên bản Supabase)
 
-A modern, real-time web application designed to display a live scoreboard for programming contests, styled after the International Collegiate Programming Contest (ICPC). This version is powered by **Supabase** for its backend, authentication, and real-time database capabilities. It includes an integrated Gemini-powered chatbot for assistance, robust admin controls, and a full suite of features for contestants. This application is bilingual, supporting both English and Vietnamese.
+Một ứng dụng web hiện đại, thời gian thực được thiết kế để hiển thị bảng điểm trực tiếp cho các cuộc thi lập trình, theo phong cách của International Collegiate Programming Contest (ICPC). Phiên bản này sử dụng **Supabase** cho backend, xác thực người dùng và cơ sở dữ liệu thời gian thực. Ứng dụng tích hợp chatbot được hỗ trợ bởi Gemini, cung cấp các công cụ quản lý mạnh mẽ cho admin và đầy đủ tính năng cho thí sinh. Ứng dụng hỗ trợ song ngữ: Tiếng Anh và Tiếng Việt.
 
-## Setup and Installation
+## Tính năng chính
 
-Follow these instructions to set up and run the project using Supabase.
+- **Tải lên Đáp án Siêu tốc**: File đáp án được tải trực tiếp lên Storage đã được tối ưu, giúp quản trị viên có trải nghiệm tức thì.
+- **Bảng điểm Thời gian thực**: Cập nhật trực tiếp bằng Supabase Realtime.
+- **Hỗ trợ Đa ngôn ngữ**: Giao diện hoàn chỉnh bằng Tiếng Anh và Tiếng Việt.
+- **Xác thực dựa trên Vai trò**: Hệ thống đăng nhập/đăng ký an toàn cho "Thí sinh" và "Quản trị viên".
+- **Chấm điểm phía Server**: Toàn bộ logic chấm điểm được thực hiện an toàn trên server-side, không để lộ đáp án ra trình duyệt.
+- **Tích hợp Gemini AI**: Bao gồm một chatbot trợ giúp và tính năng phân tích hiệu suất của đội thi.
+- **Giao diện Hiện đại**: Giao diện tối (dark theme) đáp ứng tốt trên nhiều thiết bị (responsive).
 
-### Prerequisites
+## Yêu cầu Cài đặt
 
-- [Node.js](https://nodejs.org/) (v18 or later recommended)
+- [Node.js](https://nodejs.org/) (khuyến nghị phiên bản 18 trở lên)
 - [npm](https://www.npmjs.com/)
-- A [Supabase](https://supabase.com/) account (free tier is sufficient)
-- [Supabase CLI](https://supabase.com/docs/guides/cli) (for the one-time Edge Function deployment)
+- Tài khoản [Supabase](https://supabase.com/) (gói miễn phí là đủ)
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (cần cho việc cài đặt Edge Function một lần duy nhất)
 
-### Supabase Setup
+## Hướng dẫn Cài đặt
 
-1.  **Create a New Supabase Project:**
-    - Go to your [Supabase Dashboard](https://app.supabase.com/) and create a new project.
-    - Save your database password somewhere secure.
+Làm theo các bước sau để thiết lập và chạy dự án.
 
-2.  **Get API Credentials:**
-    - In your new project, navigate to **Project Settings** (the gear icon) > **API**.
-    - You will need two values from this page:
-        - The **Project URL**.
-        - The **Project API Key** (the `anon` `public` one).
+### Phần 1: Cài đặt Frontend
 
-3.  **Create a Storage Bucket:**
-    - In the Supabase dashboard, go to **Storage** (the bucket icon).
-    - Click **Create a new bucket**.
-    - Name the bucket **`task-keys`**.
-    - Make sure the bucket is **NOT** public.
-    - Click **Create bucket**.
-    - After creation, go to the bucket's policies and create new policies with the following settings to ensure only admins can upload keys:
-      - **Policy Name:** `Admin Upload Access`
-      - **Allowed operations:** `SELECT`, `INSERT`, `UPDATE`
-      - **Target roles:** `authenticated`
-      - **WITH CHECK expression:** `(bucket_id = 'task-keys') AND (auth.uid() IN ( SELECT users.id FROM users WHERE (users.role = 'admin'::text) ))`
+1.  **Cấu hình Biến môi trường:**
+    -   Tại thư mục **gốc** của dự án, tạo một tệp mới có tên là `.env`.
+    -   Thêm các thông tin Project URL, Khóa API của Supabase và API Key của Gemini vào tệp này. Bạn sẽ lấy các giá trị này ở các bước tiếp theo.
 
-4.  **Set Up Database Schema and Functions:**
-    - Go to the **SQL Editor** in the Supabase dashboard.
-    - Click **+ New query**.
-    - Copy the **entire contents** of the SQL script below and paste it into the query window.
-    - Click **RUN**. This single script will create your tables, enable real-time updates, set up security policies, and create the necessary server-side functions.
+    ```env
+    VITE_SUPABASE_URL="YOUR_SUPABASE_PROJECT_URL"
+    VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
+    VITE_API_KEY="YOUR_GEMINI_API_KEY"
+    ```
+
+2.  **Cài đặt Dependencies & Chạy ứng dụng:**
+    -   Mở terminal trong thư mục gốc của dự án và chạy:
+        ```bash
+        npm install
+        npm run dev
+        ```
+    -   Ứng dụng frontend sẽ khởi chạy, nhưng sẽ báo lỗi cho đến khi bạn hoàn thành cài đặt Supabase.
+
+### Phần 2: Cài đặt Supabase Backend
+
+1.  **Tạo một Project Supabase mới:**
+    -   Truy cập [Supabase Dashboard](https://app.supabase.com/) và tạo một project mới.
+    -   Lưu lại mật khẩu cơ sở dữ liệu của bạn ở một nơi an toàn.
+
+2.  **Lấy API Credentials:**
+    -   Trong project vừa tạo, vào **Project Settings** (biểu tượng bánh răng) > **API**.
+    -   Lấy hai giá trị sau và điền vào tệp `.env` đã tạo ở Phần 1:
+        -   **Project URL**.
+        -   **Project API Key** (chọn khóa `anon` `public`).
+
+3.  **Tạo Storage Bucket (Nơi lưu file đáp án):**
+    -   Trong dashboard Supabase, vào **Storage** (biểu tượng cái xô).
+    -   Nhấp **Create a new bucket**.
+    -   Đặt tên bucket là **`task-keys`**. **(QUAN TRỌNG: Tên phải chính xác là 'task-keys')**.
+    -   **Bỏ chọn** ô "Public bucket". **(QUAN TRỌNG: Bucket này phải là riêng tư)**.
+    -   Nhấp **Create bucket**.
+    -   Sau khi tạo xong, vào mục **Policies** của bucket `task-keys` và tạo các policy mới với các thiết lập sau để đảm bảo chỉ admin mới có thể tải lên và đọc file đáp án:
+        -   **Policy Name:** `Admin Upload Access`
+        -   **Allowed operations:** Chọn `SELECT`, `INSERT`, `UPDATE`.
+        -   **Target roles:** Chọn `authenticated`.
+        -   **WITH CHECK expression:**
+            ```sql
+            (bucket_id = 'task-keys'::text) AND (EXISTS ( SELECT 1 FROM users WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::text))))
+            ```
+
+4.  **Chạy Script SQL Cài đặt Cơ sở dữ liệu:**
+    -   Vào **SQL Editor** trong dashboard Supabase.
+    -   Nhấp **+ New query**.
+    -   **Copy TOÀN BỘ nội dung** của script SQL bên dưới và dán vào cửa sổ query.
+    -   Nhấp **RUN**. Script này sẽ tự động tạo các bảng, bật tính năng real-time, thiết lập các quy tắc bảo mật và tạo ra các hàm cần thiết phía server.
 
     ```sql
     -- ================================================================================================
-    -- PAIC LIVE SCOREBOARD - COMPLETE SUPABASE SETUP SCRIPT
-    -- Version: 1.7
-    -- Description: Fixes RLS error on key upload by setting internal function to SECURITY DEFINER.
+    -- PAIC LIVE SCOREBOARD - SCRIPT CÀI ĐẶT SUPABASE HOÀN CHỈNH
+    -- Phiên bản: 1.8
+    -- Mô tả: Thêm các chỉ mục (index) để tối ưu hiệu năng tải bảng điểm.
     -- ================================================================================================
 
-    -- 1. USERS TABLE for public profile information
+    -- 1. BẢNG USERS cho thông tin công khai
     CREATE TABLE IF NOT EXISTS public.users (
         id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
         username VARCHAR(255) UNIQUE NOT NULL,
@@ -61,7 +94,7 @@ Follow these instructions to set up and run the project using Supabase.
     );
     ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
-    -- 2. SUBMISSIONS TABLE
+    -- 2. BẢNG SUBMISSIONS
     CREATE TABLE IF NOT EXISTS public.submissions (
         id SERIAL PRIMARY KEY,
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -74,8 +107,8 @@ Follow these instructions to set up and run the project using Supabase.
     );
     ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
     
-    -- 3. TASK KEYS TABLE
-    -- Securely stores answer key data. Now populated by an Edge Function.
+    -- 3. BẢNG TASK KEYS
+    -- Lưu trữ an toàn dữ liệu đáp án. Bảng này được cập nhật bởi một Edge Function.
     CREATE TABLE IF NOT EXISTS public.task_keys (
         task_id TEXT PRIMARY KEY,
         key_data JSONB NOT NULL,
@@ -84,33 +117,31 @@ Follow these instructions to set up and run the project using Supabase.
     );
     ALTER TABLE public.task_keys ENABLE ROW LEVEL SECURITY;
 
-    -- 4. RLS POLICIES (Row Level Security)
+    -- 4. RLS POLICIES (Quy tắc bảo mật hàng)
     -- USERS
     CREATE POLICY "Allow public read access to users" ON public.users FOR SELECT USING (true);
     CREATE POLICY "Allow users to insert their own profile" ON public.users FOR INSERT WITH CHECK (auth.uid() = id);
     -- SUBMISSIONS
     CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
-    -- TASK_KEYS (VERY RESTRICTIVE)
-    -- This policy is for client-side access. Server-side functions can bypass it.
+    -- TASK_KEYS (CỰC KỲ BẢO MẬT)
     CREATE POLICY "Allow admins to MANAGE keys" ON public.task_keys FOR ALL
         USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
         WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
     CREATE POLICY "PREVENT non-admins from reading keys" ON public.task_keys FOR SELECT
         USING (false);
 
-
-    -- 5. REALTIME SETUP
+    -- 5. CÀI ĐẶT REALTIME
     DO $$
     BEGIN
       ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions, public.task_keys;
     EXCEPTION
       WHEN duplicate_object THEN
-        -- Publication already exists, do nothing.
+        -- Publication đã tồn tại, không làm gì cả.
     END $$;
 
-    -- 6. SERVER-SIDE FUNCTIONS (RPC)
+    -- 6. CÁC HÀM SERVER-SIDE (RPC)
 
-    -- GET_SCOREBOARD: Securely gets the full scoreboard data with tie-breaking logic.
+    -- GET_SCOREBOARD: Lấy dữ liệu bảng điểm đầy đủ, có xử lý tie-break.
     CREATE OR REPLACE FUNCTION public.get_scoreboard()
     RETURNS TABLE (
         id UUID,
@@ -156,7 +187,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
 
-    -- SUBMIT_SOLUTION: Secure server-side scoring.
+    -- SUBMIT_SOLUTION: Hàm chấm điểm an toàn trên server.
     CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_submission_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -203,7 +234,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
 
-    -- DELETE_TASK_KEY: For admins to delete a key when a task is deleted.
+    -- DELETE_TASK_KEY: Cho admin xóa đáp án khi xóa một bài thi.
     CREATE OR REPLACE FUNCTION public.delete_task_key(p_task_id TEXT)
     RETURNS void
     LANGUAGE plpgsql
@@ -218,7 +249,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
     
-    -- GET_UPLOADED_TASK_KEYS: For admin UI to check status without exposing key data.
+    -- GET_UPLOADED_TASK_KEYS: Cho admin UI kiểm tra trạng thái mà không lộ dữ liệu đáp án.
     CREATE OR REPLACE FUNCTION public.get_uploaded_task_keys()
     RETURNS TABLE (task_id TEXT)
     LANGUAGE plpgsql
@@ -233,7 +264,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
 
-    -- DELETE_TEAM: Allows an admin to PERMANENTLY delete a team.
+    -- DELETE_TEAM: Cho phép admin xóa VĨNH VIỄN một đội.
     CREATE OR REPLACE FUNCTION public.delete_team(p_user_id UUID)
     RETURNS void
     LANGUAGE plpgsql
@@ -248,7 +279,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
 
-    -- CLEANUP_ORPHAN_AUTH_USERS: Maintenance function for admins.
+    -- CLEANUP_ORPHAN_AUTH_USERS: Hàm bảo trì cho admin.
     CREATE OR REPLACE FUNCTION public.cleanup_orphan_auth_users()
     RETURNS TABLE (deleted_user_id UUID, status TEXT)
     LANGUAGE plpgsql
@@ -268,7 +299,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
 
-    -- 7. TRIGGER FOR AUTOMATIC PROFILE CREATION
+    -- 7. TRIGGER TỰ ĐỘNG TẠO PROFILE
     CREATE OR REPLACE FUNCTION public.handle_new_user()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -286,8 +317,8 @@ Follow these instructions to set up and run the project using Supabase.
         AFTER INSERT ON auth.users
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-    -- 8. INTERNAL FUNCTION FOR EDGE FUNCTION (FIXED)
-    -- This function is called by the Edge Function and needs elevated privileges to bypass RLS.
+    -- 8. HÀM NỘI BỘ CHO EDGE FUNCTION (ĐÃ SỬA)
+    -- Hàm này được gọi bởi Edge Function và cần quyền cao hơn để vượt qua RLS.
     CREATE OR REPLACE FUNCTION public.internal_upsert_task_key(p_task_id TEXT, p_key_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -302,29 +333,29 @@ Follow these instructions to set up and run the project using Supabase.
     $$;
     ```
     
-5.  **Optional: Disable Email Confirmation**
-    - In your Supabase project, navigate to **Authentication** > **Providers**.
-    - Click on **Email**.
-    - Toggle off the **Confirm email** setting.
+5.  **Tùy chọn: Tắt Xác nhận Email**
+    -   Trong project Supabase, vào **Authentication** > **Providers**.
+    -   Click vào **Email**.
+    -   Tắt tùy chọn **Confirm email**. Điều này giúp thí sinh có thể đăng nhập ngay sau khi đăng ký, rất tiện lợi cho một cuộc thi.
 
-### Edge Function Setup (One-Time Task)
+### Phần 3: Cài đặt Edge Function (Tác vụ một lần)
 
-To handle answer key processing efficiently without slowing down the app, we use a server-side Edge Function.
+Để xử lý việc tải lên và phân tích file đáp án một cách hiệu quả mà không làm chậm ứng dụng, chúng ta sử dụng một Edge Function chạy phía server.
 
-1.  **Initialize Supabase locally:**
-    - Open your terminal in the project's root directory.
-    - Log in to the Supabase CLI: `supabase login`
-    - Link your local project to your remote Supabase project: `supabase link --project-ref YOUR_PROJECT_ID` (Replace `YOUR_PROJECT_ID` with the ID from your Supabase project's URL).
+1.  **Khởi tạo Supabase tại máy của bạn:**
+    -   Mở terminal trong thư mục gốc của dự án.
+    -   Đăng nhập vào Supabase CLI: `supabase login`
+    -   Liên kết thư mục dự án với project Supabase của bạn: `supabase link --project-ref YOUR_PROJECT_ID` (Thay `YOUR_PROJECT_ID` bằng ID project của bạn, lấy từ URL của project trên Supabase).
 
-2.  **Create the Edge Function:**
-    - Create the necessary folders: `mkdir -p supabase/functions/process-key-upload`
-    - Create a new file named `supabase/functions/process-key-upload/index.ts`.
-    - Paste the following code into the new file:
+2.  **Tạo Edge Function:**
+    -   Tạo các thư mục cần thiết: `mkdir -p supabase/functions/process-key-upload`
+    -   Tạo một tệp mới có tên `supabase/functions/process-key-upload/index.ts`.
+    -   Dán đoạn mã sau vào tệp vừa tạo:
 
     ```typescript
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-    // Helper function to parse CSV content
+    // Hàm phụ trợ để phân tích nội dung CSV
     const parseCSV = (csvString: string): string[][] => {
         if (!csvString) return [];
         const rows: string[][] = [];
@@ -376,7 +407,7 @@ To handle answer key processing efficiently without slowing down the app, we use
         return rows;
     };
     
-    // Main function to handle the request
+    // Hàm chính xử lý request
     Deno.serve(async (req) => {
       try {
         const { record } = await req.json();
@@ -428,59 +459,35 @@ To handle answer key processing efficiently without slowing down the app, we use
       }
     });
     ```
-3.  **Deploy the Function:**
-    - From your terminal in the project root, run:
+3.  **Triển khai (Deploy) Function:**
+    -   Từ terminal trong thư mục gốc, chạy lệnh:
       `supabase functions deploy process-key-upload --no-verify-jwt`
-    - This command uploads and deploys your function.
+    -   Lệnh này sẽ tải lên và triển khai function của bạn.
 
-4.  **Create a Webhook to Trigger the Function:**
-    - In your Supabase dashboard, go to **Database** > **Webhooks**.
-    - Click **Create a new webhook**.
-    - **Name:** `Process Uploaded Key`
-    - **Table:** `objects` (from the `storage` schema)
-    - **Events:** Check **`INSERT`**.
-    - **HTTP Request:**
-        - **URL:** `YOUR_SUPABASE_PROJECT_URL/functions/v1/process-key-upload`
-        - **HTTP Method:** `POST`
-    - Click **Create webhook**.
+4.  **Tạo Webhook để kích hoạt Function:**
+    -   Trong dashboard Supabase, vào **Database** > **Webhooks**.
+    -   Nhấp **Create a new webhook**.
+    -   **Name:** `Process Uploaded Key`
+    -   **Table:** `objects` (từ schema `storage`)
+    -   **Events:** Chọn **`INSERT`**.
+    -   **HTTP Request:**
+        -   **URL:** `YOUR_SUPABASE_PROJECT_URL/functions/v1/process-key-upload`
+        -   **HTTP Method:** `POST`
+    -   Nhấp **Create webhook**.
 
-### Frontend Setup
+### Phần 4: Tối ưu Hiệu năng (Khuyến khích)
 
-1.  **Configure Environment Variables:**
-    - In the project's **root** directory, create a new file named `.env`.
-    - Add the Supabase URL, Key, and your Gemini API Key.
-      ```env
-      VITE_SUPABASE_URL="YOUR_SUPABASE_PROJECT_URL"
-      VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
-      VITE_API_KEY="YOUR_GEMINI_API_KEY"
-      ```
+Để đảm bảo bảng điểm tải nhanh, đặc biệt khi có nhiều đội, bạn nên thêm các chỉ mục (index) cho cơ sở dữ liệu.
 
-2.  **Install Dependencies & Run:**
-    - `npm install`
-    - `npm run dev`
-
-### Performance Optimizations (Recommended)
-
-To ensure the scoreboard loads quickly, especially with many teams, it's highly recommended to add database indexes.
-
-1. Go to the **SQL Editor** in your Supabase dashboard.
-2. Run the following commands one by one. This will make lookups on the `users` and `submissions` tables much faster.
+1.  Vào **SQL Editor** trong dashboard Supabase.
+2.  Chạy lần lượt các lệnh sau. Điều này sẽ giúp các truy vấn tìm kiếm trên bảng `users` và `submissions` nhanh hơn rất nhiều.
 
 ```sql
--- Index to speed up filtering for contestants
+-- Index để tăng tốc lọc các thí sinh
 CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
 
--- Index to speed up joining submissions to users
+-- Index để tăng tốc join bảng submissions với users
 CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON public.submissions(user_id);
 ```
 
-## Features
-
-- **Blazing Fast Uploads**: Answer keys are now uploaded directly to optimized storage, making the process feel instant for admins.
-- **Live Scoreboard**: Powered by Supabase Realtime.
-- **Multi-Language Support**: English and Vietnamese.
-- **Role-Based Authentication**: Secure login/registration.
-- **Admin & Contestant Panels**: Full suite of features with server-side scoring.
-- **Gemini AI Integration**: Chatbot and performance analysis.
-- **Data Visualization**: Charts and stats bars.
-- **Modern UI/UX**: Responsive dark theme.
+Bây giờ dự án của bạn đã được thiết lập hoàn chỉnh!
