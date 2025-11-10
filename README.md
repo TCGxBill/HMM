@@ -183,7 +183,7 @@ Follow these instructions to set up and run the project using Supabase.
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
     ```
     
-4. **Optional: Disable Email Confirmation**
+4.  **Optional: Disable Email Confirmation**
     For a smoother experience during a time-limited contest, you may want to disable email confirmation so users can log in immediately after registering.
     - In your Supabase project, navigate to **Authentication** > **Providers**.
     - Click on **Email**.
@@ -195,13 +195,13 @@ Follow these instructions to set up and run the project using Supabase.
 
 1.  **Configure Environment Variables:**
     - In the project's **root** directory, create a new file named `.env`.
-    - Add the Supabase URL and Key you saved earlier. **The `VITE_` prefix is important!**
+    - Add the Supabase URL, Key, and your Gemini API Key. **The `VITE_` prefix is important!**
       ```env
       VITE_SUPABASE_URL="YOUR_SUPABASE_PROJECT_URL"
       VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
-      API_KEY="YOUR_GEMINI_API_KEY"
+      VITE_API_KEY="YOUR_GEMINI_API_KEY"
       ```
-    - Replace the placeholder values with your actual credentials. The `API_KEY` is your Google Gemini API key, which is required for the Chatbot and Analysis features.
+    - Replace the placeholder values with your actual credentials.
 
 2.  **Install Dependencies & Run:**
     - Open your terminal in the project's **root** directory.
