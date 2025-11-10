@@ -46,8 +46,8 @@ Follow these instructions to set up and run the project using Supabase.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - COMPLETE SUPABASE SETUP SCRIPT
-    -- Version: 1.6
-    -- Description: Adds performance indexes. Removes obsolete `upsert_task_key` RPC.
+    -- Version: 1.7
+    -- Description: Fixes RLS error on key upload by setting internal function to SECURITY DEFINER.
     -- ================================================================================================
 
     -- 1. USERS TABLE for public profile information
@@ -91,9 +91,12 @@ Follow these instructions to set up and run the project using Supabase.
     -- SUBMISSIONS
     CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
     -- TASK_KEYS (VERY RESTRICTIVE)
-    CREATE POLICY "Allow admins to manage task keys" ON public.task_keys FOR ALL
+    -- This policy is for client-side access. Server-side functions can bypass it.
+    CREATE POLICY "Allow admins to MANAGE keys" ON public.task_keys FOR ALL
         USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
         WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
+    CREATE POLICY "PREVENT non-admins from reading keys" ON public.task_keys FOR SELECT
+        USING (false);
 
 
     -- 5. REALTIME SETUP
@@ -153,7 +156,7 @@ Follow these instructions to set up and run the project using Supabase.
     END;
     $$;
 
-    -- SUBMIT_SOLUTION (REMAINS THE SAME)
+    -- SUBMIT_SOLUTION: Secure server-side scoring.
     CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_submission_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -283,10 +286,12 @@ Follow these instructions to set up and run the project using Supabase.
         AFTER INSERT ON auth.users
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-    -- 8. STORAGE-BASED TRIGGER FOR PROCESSING TASK KEYS (NEW)
+    -- 8. INTERNAL FUNCTION FOR EDGE FUNCTION (FIXED)
+    -- This function is called by the Edge Function and needs elevated privileges to bypass RLS.
     CREATE OR REPLACE FUNCTION public.internal_upsert_task_key(p_task_id TEXT, p_key_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
+    SECURITY DEFINER
     AS $$
     BEGIN
         INSERT INTO public.task_keys(task_id, key_data, updated_at)
