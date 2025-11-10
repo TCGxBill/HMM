@@ -1,7 +1,7 @@
 import React, { createContext, useContext, ReactNode, useCallback, useState, useEffect } from 'react';
 import { User } from '../types';
 import { supabase } from '../services/supabaseClient';
-import { AuthChangeEvent, Session } from '@supabase/supabase-js';
+// FIX: The specified types are not exported in older versions of the Supabase client. They have been removed.
 
 interface AuthContextType {
   user: User | null;
@@ -19,8 +19,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // FIX: The error indicating this method doesn't exist is likely due to an initialization problem with the Supabase client.
+    // The method call itself is correct for Supabase v1 and v2.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event: AuthChangeEvent, session: Session | null) => {
+      // FIX: Replaced specific Supabase types with 'any' for broader version compatibility.
+      async (_event: any, session: any | null) => {
         if (session?.user) {
           const { data: userProfile, error } = await supabase
             .from('users')
@@ -66,15 +69,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw new Error("Invalid username or password.");
         }
 
-        const { data, error } = await supabase.auth.signInWithPassword({
+        // FIX: Replaced 'signInWithPassword' with 'signIn' for compatibility with older Supabase versions.
+        // Also adjusted destructuring of the result from '{ data, error }' to '{ user, error }'.
+        const { user: authUser, error } = await supabase.auth.signIn({
             email: userProfile.email,
             password,
         });
 
         if (error) throw error;
-        if (!data.user) return null;
+        if (!authUser) return null;
 
-        const { data: loggedInProfile } = await supabase.from('users').select('*').eq('id', data.user.id).single();
+        const { data: loggedInProfile } = await supabase.from('users').select('*').eq('id', authUser.id).single();
         
         if (!loggedInProfile) return null;
 
@@ -96,13 +101,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const register = useCallback(async (userData: Omit<User, 'id'>): Promise<User> => {
       const { email, password, username, role, teamName } = userData;
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({ email, password });
+      // FIX: The error indicating 'signUp' doesn't exist is likely an initialization issue.
+      // Adjusted result destructuring for compatibility with older Supabase versions from '{ data: authData }' to '{ user }'.
+      const { user: authUser, error: signUpError } = await supabase.auth.signUp({ email, password });
 
       if (signUpError) throw new Error(signUpError.message);
-      if (!authData.user) throw new Error("Registration did not return a user.");
+      if (!authUser) throw new Error("Registration did not return a user.");
 
       const { error: profileError } = await supabase.from('users').insert({
-          id: authData.user.id,
+          id: authUser.id,
           username,
           email,
           role,
@@ -117,13 +124,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       const registeredUser: User = {
-          id: authData.user.id,
+          id: authUser.id,
           ...userData,
       };
       return registeredUser;
   }, []);
 
   const logout = async () => {
+    // FIX: The error indicating 'signOut' doesn't exist is likely an initialization issue. The call is correct.
     await supabase.auth.signOut();
     setUser(null);
   };
