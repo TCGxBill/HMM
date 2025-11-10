@@ -90,7 +90,7 @@ Follow these instructions to set up and run the project using Supabase.
         RETURN QUERY
         SELECT
             u.id,
-            u.team_name as "teamName",
+            u.team_name::text as "teamName",
             COALESCE(
                 (SELECT SUM(s_sum.best_score) FROM submissions s_sum WHERE s_sum.user_id = u.id), 0
             ) as "totalScore",
