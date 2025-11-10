@@ -5,14 +5,13 @@ import { mockTasks } from '../constants';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 import { useTranslation } from './LanguageContext';
-import { calculateScore, parseTaskKey } from '../services/scoringService';
+import { parseTaskKey, parseCSV } from '../services/scoringService';
 import { supabase } from '../services/supabaseClient';
 
 interface ContestContextType {
   teams: Team[];
   tasks: Task[];
   contestStatus: ContestStatus;
-  masterKey: { [taskId: string]: string[][] } | null;
   contestStats: {
     totalSubmissions: number;
     highestScore: number;
@@ -37,7 +36,6 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [teams, setTeams] = usePersistentState<Team[]>('teams', []);
   const [tasks, setTasks] = usePersistentState<Task[]>('tasks', mockTasks);
   const [contestStatus, setContestStatus] = usePersistentState<ContestStatus>('contestStatus', 'Live');
-  const [masterKey, setMasterKey] = usePersistentState<{ [taskId: string]: string[][] } | null>('masterKey', null);
   const [isLoading, setIsLoading] = useState(true);
   
   const { user } = useAuth();
@@ -85,24 +83,34 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-        const { data, error } = await supabase.rpc('get_scoreboard');
-        if (error) throw error;
+        const { data: scoreboardData, error: scoreboardError } = await supabase.rpc('get_scoreboard');
+        if (scoreboardError) throw scoreboardError;
         
-        const scoreboardData = data.map((team: any) => ({
+        const mappedData = scoreboardData.map((team: any) => ({
           ...team,
-          name: team.teamName, // Map teamName from RPC to name for the Team type
+          name: team.teamName,
         }));
         
-        const rankedTeams = reRankTeams(scoreboardData);
+        const rankedTeams = reRankTeams(mappedData);
         setTeams(rankedTeams);
+
+        // If user is admin, fetch which keys have been uploaded
+        if (user?.role === 'admin') {
+            const { data: keyStatusData, error: keyStatusError } = await supabase.rpc('get_uploaded_task_keys');
+            if(keyStatusError) throw keyStatusError;
+
+            const uploadedKeyIds = new Set(keyStatusData.map((k: any) => k.task_id));
+            setTasks(prevTasks => prevTasks.map(t => ({...t, keyUploaded: uploadedKeyIds.has(t.id)})));
+        }
+
     } catch (error) {
-        console.error("Failed to load scoreboard data", error);
+        console.error("Failed to load initial data", error);
         addToast(t('error.loadScoreboard'), 'error');
-        setTeams([]); // Clear teams on error instead of using mock data
+        setTeams([]);
     } finally {
         setIsLoading(false);
     }
-  }, [addToast, t, setTeams, reRankTeams]);
+  }, [addToast, t, setTeams, reRankTeams, user, setTasks]);
 
   useEffect(() => {
     if (user) {
@@ -113,11 +121,23 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, payload => {
                 console.log('Submission change received!', payload);
                 addToast(t('toastScoreboardUpdated'), 'info');
-                fetchInitialData(); // Refetch all data on any change
+                fetchInitialData();
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `role=eq.contestant` }, payload => {
                  console.log('Contestant user change received!', payload);
-                 fetchInitialData(); // A new contestant registered, or a team was deleted/updated
+                 fetchInitialData();
+            })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_keys' }, payload => {
+                if (user.role === 'admin') {
+                    console.log('Task key added!', payload);
+                    setTasks(prev => prev.map(t => t.id === payload.new.task_id ? {...t, keyUploaded: true} : t));
+                }
+            })
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_keys' }, payload => {
+                 if (user.role === 'admin') {
+                    console.log('Task key deleted!', payload);
+                    setTasks(prev => prev.map(t => t.id === payload.old.task_id ? {...t, keyUploaded: false} : t));
+                }
             })
             .subscribe();
 
@@ -128,7 +148,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         setIsLoading(false);
         setTeams([]);
     }
-  }, [user, fetchInitialData, addToast, t]);
+  }, [user, fetchInitialData, addToast, t, setTasks]);
   
   const contestStats = useMemo(() => {
     let totalSubmissions = 0;
@@ -165,30 +185,30 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       addToast(t('error.submissionsNotLive', { status: t(`status${contestStatus.replace(' ','')}`) }), 'error');
       return;
     }
-    if (!masterKey || !masterKey[taskId]) {
-        addToast(t('error.keyNotSet', { taskId }), 'error');
-        return;
-    }
 
     try {
-        const score = calculateScore(submissionContent, masterKey[taskId]);
-        addToast(t('toastSubmissionReceived', { taskId, score: score.toFixed(1) }), 'success');
-        
-        const newAttempt = { score, timestamp: Date.now() };
+        const submissionData = parseCSV(submissionContent);
+        // Remove header row if it exists
+        if(submissionData[0] && submissionData[0][0].toLowerCase() === 'category_id') {
+            submissionData.shift();
+        }
 
         const { error } = await supabase.rpc('submit_solution', {
             p_user_id: user.id,
             p_task_id: taskId,
-            p_attempt: newAttempt
+            p_submission_data: submissionData
         });
 
         if (error) throw error;
-        // Realtime subscription will handle updating the UI
+        
+        addToast(t('toastSubmissionReceived'), 'success');
+        // Realtime subscription will handle updating the UI and showing the final score.
 
     } catch (error: any) {
+        console.error("Submission RPC error:", error);
         addToast(t(error.message) || error.message, 'error');
     }
-  }, [user, contestStatus, masterKey, addToast, t]);
+  }, [user, contestStatus, addToast, t]);
   
   const updateContestStatus = (newStatus: ContestStatus) => {
     if (user?.role !== 'admin') {
@@ -200,16 +220,23 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     addToast(t('toastContestStatusUpdated', { status: translatedStatus }), 'info');
   };
 
-  const setTaskKey = (taskId: string, keyContent: string) => {
+  const setTaskKey = async (taskId: string, keyContent: string) => {
     if (user?.role !== 'admin') {
       addToast(t('error.adminOnly'), 'error');
       return;
     }
     try {
       const parsedKey = parseTaskKey(keyContent);
-      setMasterKey(prev => ({ ...prev, [taskId]: parsedKey }));
-      setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? {...t, keyUploaded: true} : t));
+      
+      const { error } = await supabase.rpc('upsert_task_key', {
+        p_task_id: taskId,
+        p_key_data: parsedKey
+      });
+
+      if (error) throw error;
+      
       addToast(t('toastKeyUploaded', { taskId }), 'success');
+      // Realtime subscription will update the 'keyUploaded' status in the UI
     } catch (error: any) {
       addToast(t('error.parsingKeyError', { taskId, error: error.message }), 'error');
     }
@@ -220,7 +247,6 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const updateTeam = (updatedTeam: Team) => {
-    // This now only updates local state. A real implementation would hit a backend endpoint.
     setTeams(prev => reRankTeams(prev.map(t => t.id === updatedTeam.id ? updatedTeam : t)));
   };
   
@@ -258,23 +284,35 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
   };
   
-  const deleteTask = (taskId: string) => {
+  const deleteTask = async (taskId: string) => {
+    if (user?.role !== 'admin') {
+      addToast(t('error.adminOnly'), 'error');
+      return;
+    }
+    // Delete local task immediately for responsive UI
     setTasks(prev => prev.filter(t => t.id !== taskId));
-    setMasterKey(prev => {
-        if (!prev) return null;
-        const newKey = {...prev};
-        delete newKey[taskId];
-        return newKey;
-    });
+
+    try {
+        // Also delete the key from the database
+        const { error } = await supabase.rpc('delete_task_key', { p_task_id: taskId });
+        if (error) throw error;
+    } catch (error) {
+        console.error("Error deleting task key:", error);
+        addToast('Failed to delete task key from server.', 'error');
+        // Optionally, add the task back to the list if the server call fails
+    }
   };
 
   const resetContest = () => {
-    // This only resets local state. The remote DB is unaffected.
+    if (user?.role !== 'admin') {
+      addToast(t('error.adminOnly'), 'error');
+      return;
+    }
+    // This now only resets local, non-persistent state like tasks.
     setTasks(mockTasks);
     setContestStatus('Live');
-    setMasterKey(null);
     addToast(t('toastContestReset'), 'info');
-    fetchInitialData(); // Refetch from DB to get the current server state.
+    fetchInitialData(); // Refetch from DB to get the current server state for teams and keys.
   };
 
   return (
@@ -282,7 +320,6 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       teams,
       tasks,
       contestStatus,
-      masterKey,
       contestStats,
       isLoading,
       submitSolution,

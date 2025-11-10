@@ -33,14 +33,13 @@ Follow these instructions to set up and run the project using Supabase.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - COMPLETE SUPABASE SETUP SCRIPT
-    -- Version: 1.3
+    -- Version: 1.4
     -- Description: This script sets up all necessary tables, policies, real-time replication,
-    --              and robust server-side functions for user creation, deletion, and cleanup.
-    --              Includes tie-breaking logic in scoreboard ranking.
+    --              and robust server-side functions. This version introduces a secure, server-side
+    --              scoring mechanism by adding a `task_keys` table and updating RPC functions.
     -- ================================================================================================
 
     -- 1. USERS TABLE for public profile information
-    -- Stores non-sensitive user data linked to the master auth.users table.
     CREATE TABLE IF NOT EXISTS public.users (
         id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
         username VARCHAR(255) UNIQUE NOT NULL,
@@ -49,42 +48,54 @@ Follow these instructions to set up and run the project using Supabase.
         team_name VARCHAR(255) UNIQUE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
-    -- Enable Row Level Security
     ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
     -- 2. SUBMISSIONS TABLE
-    -- Stores all submission data for each user/task.
     CREATE TABLE IF NOT EXISTS public.submissions (
         id SERIAL PRIMARY KEY,
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
         task_id VARCHAR(50) NOT NULL,
         best_score NUMERIC(5, 2) DEFAULT 0,
-        history JSONB, -- Stores an array of all attempts: [{ "score": 85.5, "timestamp": "..." }]
+        history JSONB,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, task_id)
     );
-    -- Enable Row Level Security
     ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
+    
+    -- 3. TASK KEYS TABLE (NEW)
+    -- Securely stores answer key data. Only accessible via SECURITY DEFINER functions.
+    CREATE TABLE IF NOT EXISTS public.task_keys (
+        task_id TEXT PRIMARY KEY,
+        key_data JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    ALTER TABLE public.task_keys ENABLE ROW LEVEL SECURITY;
 
-    -- 3. RLS POLICIES (Row Level Security)
-    -- Defines who can access or modify the data.
+    -- 4. RLS POLICIES (Row Level Security)
+    -- USERS
     CREATE POLICY "Allow public read access to users" ON public.users FOR SELECT USING (true);
     CREATE POLICY "Allow users to insert their own profile" ON public.users FOR INSERT WITH CHECK (auth.uid() = id);
+    -- SUBMISSIONS
     CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
-    -- Note: Direct insert/update policies for submissions are not needed as we use a secure RPC function.
+    -- TASK_KEYS (VERY RESTRICTIVE)
+    CREATE POLICY "Allow admins to manage task keys" ON public.task_keys FOR ALL
+        USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
+        WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
 
-    -- 4. REALTIME SETUP
-    -- Enable real-time updates for the 'users' and 'submissions' tables.
+
+    -- 5. REALTIME SETUP
+    -- Enable real-time updates for relevant tables.
     DO $$
     BEGIN
-      ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions;
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions, public.task_keys;
     EXCEPTION
       WHEN duplicate_object THEN
         -- Publication already exists, do nothing.
     END $$;
 
-    -- 5. SERVER-SIDE FUNCTIONS (RPC)
+    -- 6. SERVER-SIDE FUNCTIONS (RPC)
 
     -- GET_SCOREBOARD: Securely gets the full scoreboard data with tie-breaking logic.
     CREATE OR REPLACE FUNCTION public.get_scoreboard()
@@ -94,54 +105,31 @@ Follow these instructions to set up and run the project using Supabase.
         "totalScore" NUMERIC,
         solved BIGINT,
         submissions JSON,
-        "lastSolveTimestamp" BIGINT -- For tie-breaking
+        "lastSolveTimestamp" BIGINT
     )
     LANGUAGE plpgsql
     AS $$
     BEGIN
         RETURN QUERY
         WITH team_scores AS (
-            -- Step 1: Calculate total score, solved count, and last solve time for each team
             SELECT
                 u.id,
                 u.team_name,
                 COALESCE(SUM(s.best_score), 0) as total_score,
                 COALESCE(COUNT(s.id) FILTER (WHERE s.best_score > 0), 0) as solved_count,
-                MAX(
-                    -- This subquery finds the timestamp of the FIRST attempt that achieved the best score for a task
-                    (
-                        SELECT (elem->>'timestamp')::BIGINT
-                        FROM jsonb_array_elements(s.history) AS elem
-                        WHERE (elem->>'score')::NUMERIC = s.best_score
-                        ORDER BY (elem->>'timestamp')::BIGINT ASC
-                        LIMIT 1
-                    )
-                ) AS last_solve_timestamp
-            FROM
-                public.users u
-            LEFT JOIN
-                public.submissions s ON u.id = s.user_id
-            WHERE
-                u.role = 'contestant'
-            GROUP BY
-                u.id
+                MAX((SELECT (elem->>'timestamp')::BIGINT FROM jsonb_array_elements(s.history) AS elem WHERE (elem->>'score')::NUMERIC = s.best_score ORDER BY (elem->>'timestamp')::BIGINT ASC LIMIT 1)) AS last_solve_timestamp
+            FROM public.users u
+            LEFT JOIN public.submissions s ON u.id = s.user_id
+            WHERE u.role = 'contestant'
+            GROUP BY u.id
         ),
         team_submissions AS (
-            -- Step 2: Aggregate submission details for JSON output
             SELECT
                 s.user_id,
-                json_agg(json_build_object(
-                    'taskId', s.task_id,
-                    'score', s.best_score,
-                    'attempts', jsonb_array_length(s.history),
-                    'history', s.history
-                )) AS submissions_json
-            FROM
-                public.submissions s
-            GROUP BY
-                s.user_id
+                json_agg(json_build_object('taskId', s.task_id, 'score', s.best_score, 'attempts', jsonb_array_length(s.history), 'history', s.history)) AS submissions_json
+            FROM public.submissions s
+            GROUP BY s.user_id
         )
-        -- Step 3: Join everything and order with tie-breaking
         SELECT
             ts.id,
             ts.team_name::text AS "teamName",
@@ -149,59 +137,130 @@ Follow these instructions to set up and run the project using Supabase.
             ts.solved_count AS solved,
             COALESCE(sub.submissions_json, '[]'::json) AS submissions,
             ts.last_solve_timestamp as "lastSolveTimestamp"
-        FROM
-            team_scores ts
-        LEFT JOIN
-            team_submissions sub ON ts.id = sub.user_id
-        ORDER BY
-            "totalScore" DESC,
-            "lastSolveTimestamp" ASC NULLS LAST;
+        FROM team_scores ts
+        LEFT JOIN team_submissions sub ON ts.id = sub.user_id
+        ORDER BY "totalScore" DESC, "lastSolveTimestamp" ASC NULLS LAST;
     END;
     $$;
 
-    -- SUBMIT_SOLUTION: Securely handles a new submission.
-    CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_attempt JSONB)
-    RETURNS void
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path = public
-    AS $$
-    BEGIN
-        INSERT INTO submissions (user_id, task_id, best_score, history)
-        VALUES (p_user_id, p_task_id, (p_attempt->>'score')::NUMERIC, jsonb_build_array(p_attempt))
-        ON CONFLICT (user_id, task_id) DO UPDATE 
-        SET 
-            best_score = GREATEST(submissions.best_score, (p_attempt->>'score')::NUMERIC),
-            history = submissions.history || p_attempt,
-            updated_at = NOW();
-    END;
-    $$;
-    
-    -- DELETE_TEAM: Allows an admin to PERMANENTLY delete a team and free up their email.
-    CREATE OR REPLACE FUNCTION public.delete_team(p_user_id UUID)
+    -- SUBMIT_SOLUTION (REWRITTEN FOR SERVER-SIDE SCORING)
+    CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_submission_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
     SET search_path = public
     AS $$
     DECLARE
-        requesting_user_role TEXT;
+        v_key_data JSONB;
+        v_score NUMERIC;
+        v_correct_predictions INT := 0;
+        v_total_rows INT;
+        v_submission_row JSONB;
+        v_key_row JSONB;
+        v_new_attempt JSONB;
     BEGIN
-        -- Verify the calling user IS an admin from our public.users table.
-        SELECT role INTO requesting_user_role FROM public.users WHERE id = auth.uid();
-        IF requesting_user_role <> 'admin' THEN
-            RAISE EXCEPTION 'You do not have permission to delete a team.';
+        -- Fetch the answer key (SECURITY DEFINER context allows this)
+        SELECT tk.key_data INTO v_key_data FROM public.task_keys tk WHERE tk.task_id = p_task_id;
+
+        IF v_key_data IS NULL THEN
+            RAISE EXCEPTION 'The answer key for task % has not been set.', p_task_id;
         END IF;
 
-        -- If the check passes, proceed with permanent deletion from the auth schema.
-        -- This function PERMANENTLY deletes the user and all their data (due to CASCADE), allowing the email to be reused.
+        IF jsonb_array_length(p_submission_data) <> jsonb_array_length(v_key_data) THEN
+            RAISE EXCEPTION 'Submission has % data rows, but answer key has %. Row counts must match.', jsonb_array_length(p_submission_data), jsonb_array_length(v_key_data);
+        END IF;
+        
+        v_total_rows := jsonb_array_length(v_key_data);
+        IF v_total_rows = 0 THEN
+            v_score := 0;
+        ELSE
+            FOR i IN 0..v_total_rows - 1 LOOP
+                v_submission_row := p_submission_data -> i;
+                v_key_row := v_key_data -> i;
+                IF (v_submission_row ->> 2) = (v_key_row ->> 2) THEN
+                    v_correct_predictions := v_correct_predictions + 1;
+                END IF;
+            END LOOP;
+            v_score := (v_correct_predictions::NUMERIC / v_total_rows::NUMERIC) * 100;
+        END IF;
+
+        v_new_attempt := jsonb_build_object('score', v_score, 'timestamp', (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT);
+
+        INSERT INTO submissions (user_id, task_id, best_score, history)
+        VALUES (p_user_id, p_task_id, v_score, jsonb_build_array(v_new_attempt))
+        ON CONFLICT (user_id, task_id) DO UPDATE 
+        SET 
+            best_score = GREATEST(submissions.best_score, v_score),
+            history = submissions.history || v_new_attempt,
+            updated_at = NOW();
+    END;
+    $$;
+    
+    -- UPSERT_TASK_KEY (NEW): For admins to upload/update an answer key.
+    CREATE OR REPLACE FUNCTION public.upsert_task_key(p_task_id TEXT, p_key_data JSONB)
+    RETURNS void
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public
+    AS $$
+    BEGIN
+        IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
+            RAISE EXCEPTION 'Permission denied: Only admins can manage task keys.';
+        END IF;
+
+        INSERT INTO public.task_keys(task_id, key_data, updated_at)
+        VALUES(p_task_id, p_key_data, NOW())
+        ON CONFLICT (task_id) DO UPDATE
+        SET key_data = p_key_data, updated_at = NOW();
+    END;
+    $$;
+
+    -- DELETE_TASK_KEY (NEW): For admins to delete a key when a task is deleted.
+    CREATE OR REPLACE FUNCTION public.delete_task_key(p_task_id TEXT)
+    RETURNS void
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public
+    AS $$
+    BEGIN
+        IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
+            RAISE EXCEPTION 'Permission denied: Only admins can manage task keys.';
+        END IF;
+        DELETE FROM public.task_keys WHERE task_id = p_task_id;
+    END;
+    $$;
+    
+    -- GET_UPLOADED_TASK_KEYS (NEW): For admin UI to check status without exposing key data.
+    CREATE OR REPLACE FUNCTION public.get_uploaded_task_keys()
+    RETURNS TABLE (task_id TEXT)
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public
+    AS $$
+    BEGIN
+        IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
+            RAISE EXCEPTION 'Permission denied.';
+        END IF;
+        RETURN QUERY SELECT tk.task_id FROM public.task_keys tk;
+    END;
+    $$;
+
+    -- DELETE_TEAM: Allows an admin to PERMANENTLY delete a team.
+    CREATE OR REPLACE FUNCTION public.delete_team(p_user_id UUID)
+    RETURNS void
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public
+    AS $$
+    BEGIN
+        IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
+            RAISE EXCEPTION 'You do not have permission to delete a team.';
+        END IF;
         PERFORM auth.admin_delete_user(p_user_id);
     END;
     $$;
 
-    -- CLEANUP_ORPHAN_AUTH_USERS: A maintenance function for admins to remove stuck accounts.
-    -- This finds users in `auth.users` that do not have a corresponding profile in `public.users`
-    -- (usually from a failed registration) and purges them.
+    -- CLEANUP_ORPHAN_AUTH_USERS: Maintenance function for admins.
     CREATE OR REPLACE FUNCTION public.cleanup_orphan_auth_users()
     RETURNS TABLE (deleted_user_id UUID, status TEXT)
     LANGUAGE plpgsql
@@ -209,27 +268,19 @@ Follow these instructions to set up and run the project using Supabase.
     SET search_path = public
     AS $$
     DECLARE
-        requesting_user_role TEXT;
         orphan_id UUID;
     BEGIN
-        -- Verify the calling user IS an admin.
-        SELECT role INTO requesting_user_role FROM public.users WHERE id = auth.uid();
-        IF requesting_user_role <> 'admin' THEN
+        IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
             RAISE EXCEPTION 'You do not have permission to perform this action.';
         END IF;
-
-        -- Find and delete orphans
-        FOR orphan_id IN
-            SELECT id FROM auth.users WHERE id NOT IN (SELECT id FROM public.users)
-        LOOP
+        FOR orphan_id IN SELECT id FROM auth.users WHERE id NOT IN (SELECT id FROM public.users) LOOP
             PERFORM auth.admin_delete_user(orphan_id);
             RETURN QUERY SELECT orphan_id, 'deleted';
         END LOOP;
     END;
     $$;
 
-    -- 6. TRIGGER FOR AUTOMATIC PROFILE CREATION
-    -- This function automatically creates a user profile upon registration.
+    -- 7. TRIGGER FOR AUTOMATIC PROFILE CREATION
     CREATE OR REPLACE FUNCTION public.handle_new_user()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -238,19 +289,10 @@ Follow these instructions to set up and run the project using Supabase.
     AS $$
     BEGIN
         INSERT INTO public.users (id, username, email, role, team_name)
-        VALUES (
-            new.id,
-            new.raw_user_meta_data->>'username',
-            new.email,
-            new.raw_user_meta_data->>'role',
-            new.raw_user_meta_data->>'team_name'
-        );
+        VALUES (new.id, new.raw_user_meta_data->>'username', new.email, new.raw_user_meta_data->>'role', new.raw_user_meta_data->>'team_name');
         RETURN new;
     END;
     $$;
-
-    -- This trigger calls the function after a user signs up.
-    -- Drop the trigger if it exists to ensure it's fresh
     DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
     CREATE TRIGGER on_auth_user_created
         AFTER INSERT ON auth.users
@@ -300,7 +342,7 @@ Follow these instructions to set up and run the project using Supabase.
 - **Admin Panel**:
     - **Contest Control**: Start, pause ('Live'), or end the contest.
     - **Task Management**: Dynamically add or delete contest tasks.
-    - **Answer Key Management**: Upload answer keys and control their scoring visibility.
+    - **Answer Key Management**: Securely upload answer keys to the server. Scoring is performed server-side.
     - **Team Management**: Delete teams and all their associated data directly from the UI.
 - **Gemini AI Integration**:
     - **AI Chatbot**: An assistant for questions about competitive programming.
