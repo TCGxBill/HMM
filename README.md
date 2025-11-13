@@ -79,9 +79,9 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - SCRIPT CÀI ĐẶT SUPABASE HOÀN CHỈNH
-    -- Phiên bản: 2.0
-    -- Mô tả: Thêm bảng `tasks` để quản lý bài thi trong database thay vì local storage.
-    --        Thêm các RPCs để quản lý tasks (`get_tasks_with_status`, `delete_task`, `reset_contest_tasks`).
+    -- Phiên bản: 3.0
+    -- Mô tả: Thêm bảng `contest_settings` để quản lý trạng thái cuộc thi toàn cục.
+    --        Thay thế RPC `reset_contest_tasks` bằng `reset_contest` để dọn dẹp toàn diện.
     -- ================================================================================================
 
     -- 1. BẢNG USERS cho thông tin công khai
@@ -126,7 +126,16 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     );
     ALTER TABLE public.task_keys ENABLE ROW LEVEL SECURITY;
 
-    -- 5. RLS POLICIES (Quy tắc bảo mật hàng)
+    -- 5. BẢNG CONTEST SETTINGS
+    CREATE TABLE IF NOT EXISTS public.contest_settings (
+        id INT PRIMARY KEY DEFAULT 1,
+        contest_status TEXT NOT NULL DEFAULT 'Not Started' CHECK (contest_status IN ('Not Started', 'Live', 'Finished')),
+        CONSTRAINT singleton_check CHECK (id = 1)
+    );
+    ALTER TABLE public.contest_settings ENABLE ROW LEVEL SECURITY;
+
+
+    -- 6. RLS POLICIES (Quy tắc bảo mật hàng)
     -- USERS
     CREATE POLICY "Allow public read access to users" ON public.users FOR SELECT USING (true);
     CREATE POLICY "Allow users to insert their own profile" ON public.users FOR INSERT WITH CHECK (auth.uid() = id);
@@ -143,17 +152,26 @@ Làm theo các bước sau để thiết lập và chạy dự án.
         WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
     CREATE POLICY "PREVENT non-admins from reading keys" ON public.task_keys FOR SELECT
         USING (false);
+    -- CONTEST_SETTINGS
+    CREATE POLICY "Allow public read access to settings" ON public.contest_settings FOR SELECT USING (true);
+    CREATE POLICY "Allow admins to update settings" ON public.contest_settings FOR UPDATE
+        USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
+        WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
 
-    -- 6. CÀI ĐẶT REALTIME
+
+    -- 7. CÀI ĐẶT REALTIME
     DO $$
     BEGIN
-      ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions, public.task_keys, public.tasks;
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions, public.task_keys, public.tasks, public.contest_settings;
     EXCEPTION
       WHEN duplicate_object THEN
         -- Publication đã tồn tại, không làm gì cả.
     END $$;
 
-    -- 7. CÁC HÀM SERVER-SIDE (RPC)
+    -- 8. SEED DATA
+    INSERT INTO public.contest_settings (id, contest_status) VALUES (1, 'Not Started') ON CONFLICT (id) DO NOTHING;
+
+    -- 9. CÁC HÀM SERVER-SIDE (RPC)
 
     -- GET_SCOREBOARD
     CREATE OR REPLACE FUNCTION public.get_scoreboard()
@@ -320,8 +338,8 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
 
-    -- RESET_CONTEST_TASKS
-    CREATE OR REPLACE FUNCTION public.reset_contest_tasks()
+    -- RESET_CONTEST
+    CREATE OR REPLACE FUNCTION public.reset_contest()
     RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -331,15 +349,23 @@ Làm theo các bước sau để thiết lập và chạy dự án.
         object_paths TEXT[];
     BEGIN
         IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
-            RAISE EXCEPTION 'Permission denied: Only admins can reset tasks.';
+            RAISE EXCEPTION 'Permission denied: Only admins can reset the contest.';
         END IF;
+        -- Get paths of files in storage to delete them
         SELECT array_agg(tk.task_id || '.csv')
         INTO object_paths
         FROM public.task_keys tk;
-        TRUNCATE public.tasks, public.task_keys RESTART IDENTITY;
+        
+        -- Clear all contest data
+        TRUNCATE public.tasks, public.task_keys, public.submissions RESTART IDENTITY;
+        
+        -- Delete files from storage
         IF array_length(object_paths, 1) > 0 THEN
             PERFORM storage.delete_objects('task-keys', object_paths);
         END IF;
+
+        -- Reset contest status
+        UPDATE public.contest_settings SET contest_status = 'Not Started' WHERE id = 1;
     END;
     $$;
 
@@ -363,7 +389,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
 
-    -- 8. TRIGGER TỰ ĐỘNG TẠO PROFILE
+    -- 10. TRIGGER TỰ ĐỘNG TẠO PROFILE
     CREATE OR REPLACE FUNCTION public.handle_new_user()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -381,7 +407,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
         AFTER INSERT ON auth.users
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-    -- 9. HÀM NỘI BỘ CHO EDGE FUNCTION
+    -- 11. HÀM NỘI BỘ CHO EDGE FUNCTION
     CREATE OR REPLACE FUNCTION public.internal_upsert_task_key(p_task_id TEXT, p_key_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -396,7 +422,12 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     $$;
     ```
     
-5.  **Tùy chọn: Tắt Xác nhận Email**
+5.  **Cấu hình Site URL (QUAN TRỌNG):**
+    -   Để chức năng đặt lại mật khẩu hoạt động, bạn phải cấu hình Site URL trong Supabase.
+    -   Vào **Authentication** > **URL Configuration**.
+    -   Đặt **Site URL** thành URL mà ứng dụng của bạn được host (ví dụ: `http://localhost:5173` cho môi trường phát triển local).
+
+6.  **Tùy chọn: Tắt Xác nhận Email**
     -   Trong project Supabase, vào **Authentication** > **Providers**.
     -   Click vào **Email**.
     -   Tắt tùy chọn **Confirm email**. Điều này giúp thí sinh có thể đăng nhập ngay sau khi đăng ký, rất tiện lợi cho một cuộc thi.

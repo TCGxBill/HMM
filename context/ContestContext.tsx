@@ -19,7 +19,7 @@ interface ContestContextType {
   isLoading: boolean;
   uploadingTasks: Set<string>;
   submitSolution: (taskId: string, submissionContent: string) => Promise<void>;
-  updateContestStatus: (newStatus: ContestStatus) => void;
+  updateContestStatus: (newStatus: ContestStatus) => Promise<void>;
   setTaskKey: (taskId: string, keyFile: File) => void;
   addTeam: (teamName: string) => void;
   updateTeam: (team: Team) => void;
@@ -35,7 +35,7 @@ const ContestContext = createContext<ContestContextType | undefined>(undefined);
 export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [teams, setTeams] = usePersistentState<Team[]>('teams', []);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [contestStatus, setContestStatus] = usePersistentState<ContestStatus>('contestStatus', 'Live');
+  const [contestStatus, setContestStatus] = useState<ContestStatus>('Not Started');
   const [isLoading, setIsLoading] = useState(true);
   const [uploadingTasks, setUploadingTasks] = useState(new Set<string>());
   
@@ -118,11 +118,26 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
   }, [addToast, t]);
 
+  const fetchContestStatus = useCallback(async () => {
+      try {
+          const { data, error } = await supabase
+            .from('contest_settings')
+            .select('contest_status')
+            .eq('id', 1)
+            .single();
+          if (error) throw error;
+          if (data) setContestStatus(data.contest_status);
+      } catch(error) {
+          console.error("Failed to fetch contest status:", error);
+          // Don't show toast, as it might be a temporary network issue on load.
+      }
+  }, []);
+
 
   useEffect(() => {
     if (user) {
         setIsLoading(true);
-        Promise.all([fetchScoreboard(), fetchTasks()]).finally(() => setIsLoading(false));
+        Promise.all([fetchScoreboard(), fetchTasks(), fetchContestStatus()]).finally(() => setIsLoading(false));
 
         const channel = supabase
             .channel('realtime-all')
@@ -143,6 +158,10 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
                  console.log('Task key change received!', payload);
                  fetchTasks();
             })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contest_settings', filter: 'id=eq.1'}, payload => {
+                console.log('Contest status change received!', payload);
+                setContestStatus(payload.new.contest_status);
+            })
             .subscribe();
 
         return () => {
@@ -153,7 +172,7 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
         setTeams([]);
         setTasks([]);
     }
-  }, [user, fetchScoreboard, fetchTasks, addToast, t]);
+  }, [user, fetchScoreboard, fetchTasks, fetchContestStatus, addToast, t]);
   
   const contestStats = useMemo(() => {
     let totalSubmissions = 0;
@@ -215,14 +234,23 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   }, [user, contestStatus, addToast, t]);
   
-  const updateContestStatus = (newStatus: ContestStatus) => {
+  const updateContestStatus = async (newStatus: ContestStatus) => {
     if (user?.role !== 'admin') {
       addToast(t('error.adminOnly'), 'error');
       return;
     }
-    setContestStatus(newStatus);
-    const translatedStatus = t(`status${newStatus.replace(' ','')}`);
-    addToast(t('toastContestStatusUpdated', { status: translatedStatus }), 'info');
+    const { error } = await supabase
+        .from('contest_settings')
+        .update({ contest_status: newStatus })
+        .eq('id', 1);
+
+    if (error) {
+        addToast(t('error.updateStatus'), 'error');
+        console.error("Failed to update contest status:", error);
+    } else {
+        const translatedStatus = t(`status${newStatus.replace(' ','')}`);
+        addToast(t('toastContestStatusUpdated', { status: translatedStatus }), 'info');
+    }
   };
 
   const setTaskKey = async (taskId: string, keyFile: File) => {
@@ -350,13 +378,13 @@ export const ContestProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
     
     try {
-        const { error } = await supabase.rpc('reset_contest_tasks');
+        const { error } = await supabase.rpc('reset_contest');
         if (error) throw error;
         
-        setContestStatus('Live');
         addToast(t('toastContestReset'), 'info');
+        // Realtime subscriptions will handle updating the UI for tasks, status, and scoreboard.
+        // We can manually trigger a scoreboard fetch for immediate feedback.
         fetchScoreboard();
-        // Realtime will handle clearing tasks from UI
     } catch (error) {
         console.error("Error resetting contest:", error);
         addToast(t('error.resetContest'), 'error');

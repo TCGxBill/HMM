@@ -4,7 +4,7 @@ import { useTranslation } from '../context/LanguageContext';
 import { LogoIcon } from './Icons';
 
 export const LoginPage: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'login' | 'register'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'register' | 'forgotPassword'>('login');
   const [currentRole, setCurrentRole] = useState<'contestant' | 'admin'>('contestant');
   
   // Login State
@@ -17,9 +17,12 @@ export const LoginPage: React.FC = () => {
   const [regPassword, setRegPassword] = useState('');
   const [regTeamName, setRegTeamName] = useState('');
   
+  // Forgot Password State
+  const [forgotEmail, setForgotEmail] = useState('');
+
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { login, register } = useAuth();
+  const { login, register, sendPasswordResetEmail } = useAuth();
   const { t } = useTranslation();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -71,10 +74,30 @@ export const LoginPage: React.FC = () => {
     }
   }
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage(null);
+    setIsLoading(true);
+    try {
+        await sendPasswordResetEmail(forgotEmail);
+        setMessage({ text: t('resetEmailSentMessage'), type: 'success' });
+    } catch (error: any) {
+        const errorMessage = t(error.message) || t('error.genericLogin');
+        setMessage({ text: errorMessage, type: 'error' });
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
   const switchTab = (role: 'contestant' | 'admin') => {
     setCurrentRole(role);
     setMessage(null);
   }
+
+  const switchView = (view: 'login' | 'register' | 'forgotPassword') => {
+    setCurrentView(view);
+    setMessage(null);
+  };
 
   const MessageDisplay = () => {
     if (!message) return null;
@@ -117,16 +140,19 @@ export const LoginPage: React.FC = () => {
                   className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary"
                   placeholder={t('passwordPlaceholder')} required />
               </div>
+              <div className="text-right text-sm">
+                <a href="#" onClick={(e) => { e.preventDefault(); switchView('forgotPassword'); }} className="font-medium text-contest-primary hover:underline">{t('forgotPasswordLink')}</a>
+              </div>
               <MessageDisplay />
               <button type="submit" disabled={isLoading}
                 className="w-full p-3 bg-contest-primary text-white font-bold rounded-lg hover:bg-indigo-500 disabled:bg-contest-gray transition-colors">
                 {isLoading ? t('loggingInButton') : t('loginButton')}
               </button>
               <p className="text-sm text-center text-gray-400">
-                {t('noAccount')} <a href="#" onClick={(e) => { e.preventDefault(); setCurrentView('register'); }} className="font-medium text-contest-primary hover:underline">{t('registerTitle')}</a>
+                {t('noAccount')} <a href="#" onClick={(e) => { e.preventDefault(); switchView('register'); }} className="font-medium text-contest-primary hover:underline">{t('registerTitle')}</a>
               </p>
             </form>
-        ) : (
+        ) : currentView === 'register' ? (
             <form className="space-y-4" onSubmit={handleRegister}>
                 <h2 className="text-xl font-semibold text-center text-white">{t('registerForContestant')}</h2>
                 <input type="text" value={regUsername} onChange={e => setRegUsername(e.target.value)} placeholder={t('usernamePlaceholder')} required 
@@ -143,7 +169,22 @@ export const LoginPage: React.FC = () => {
                     {isLoading ? t('registeringButton') : t('registerButton')}
                 </button>
                 <p className="text-sm text-center text-gray-400">
-                    {t('alreadyHaveAccount')} <a href="#" onClick={(e) => { e.preventDefault(); setCurrentView('login'); }} className="font-medium text-contest-primary hover:underline">{t('loginTitle')}</a>
+                    {t('alreadyHaveAccount')} <a href="#" onClick={(e) => { e.preventDefault(); switchView('login'); }} className="font-medium text-contest-primary hover:underline">{t('loginTitle')}</a>
+                </p>
+            </form>
+        ) : (
+            <form className="space-y-4" onSubmit={handleForgotPassword}>
+                <h2 className="text-xl font-semibold text-center text-white">{t('forgotPasswordTitle')}</h2>
+                 <p className="text-sm text-center text-gray-400">{t('forgotPasswordInstructions')}</p>
+                <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder={t('emailPlaceholder')} required
+                    className="w-full p-3 bg-contest-dark border border-contest-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-contest-primary" />
+                <MessageDisplay />
+                <button type="submit" disabled={isLoading}
+                    className="w-full p-3 bg-contest-secondary text-white font-bold rounded-lg hover:bg-purple-700 disabled:bg-contest-gray transition-colors">
+                    {isLoading ? t('sendingButton') : t('sendResetLinkButton')}
+                </button>
+                <p className="text-sm text-center text-gray-400">
+                    <a href="#" onClick={(e) => { e.preventDefault(); switchView('login'); }} className="font-medium text-contest-primary hover:underline">{t('backToLogin')}</a>
                 </p>
             </form>
         )}

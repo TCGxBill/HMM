@@ -6,10 +6,14 @@ import { supabase } from '../services/supabaseClient';
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isPasswordRecovery: boolean;
   login: (username: string, password: string, role: 'admin' | 'contestant') => Promise<User | null>;
   register: (userData: Omit<User, 'id'>) => Promise<User>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  sendPasswordResetEmail: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
+  closePasswordRecovery: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -18,6 +22,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
     // FIX: The error indicating this method doesn't exist is likely due to an initialization problem with the Supabase client.
@@ -25,6 +30,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       // FIX: Replaced specific Supabase types with 'any' for broader version compatibility.
       async (_event: any, session: any | null) => {
+        if (_event === 'PASSWORD_RECOVERY') {
+          setIsPasswordRecovery(true);
+        }
+
         if (session?.user) {
           const { data: userProfile, error } = await supabase
             .from('users')
@@ -170,6 +179,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  const sendPasswordResetEmail = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) {
+        console.error('Password reset email error:', error);
+        if (error.message.includes("User not found")) {
+            throw new Error('error.emailNotFound');
+        }
+        throw error;
+    }
+  }, []);
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+        console.error('Password update error:', error);
+        throw new Error('error.passwordUpdateFailed');
+    }
+    setIsPasswordRecovery(false); // Close modal on success
+  }, []);
+  
+  const closePasswordRecovery = useCallback(() => {
+      setIsPasswordRecovery(false);
+  }, []);
+
   const logout = async () => {
     // FIX: The error indicating 'signOut' doesn't exist is likely an initialization issue. The call is correct.
     await supabase.auth.signOut();
@@ -190,7 +225,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, register, logout, changePassword }}>
+    <AuthContext.Provider value={{ 
+        user, 
+        isAuthenticated, 
+        isPasswordRecovery,
+        login, 
+        register, 
+        logout, 
+        changePassword,
+        sendPasswordResetEmail,
+        updatePassword,
+        closePasswordRecovery,
+    }}>
       {children}
     </AuthContext.Provider>
   );

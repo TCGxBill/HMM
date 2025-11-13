@@ -15,10 +15,11 @@ import { StatsBar } from './components/StatsBar';
 import { Team } from './types';
 import { LogoIcon } from './components/Icons';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { ResetPasswordModal } from './components/ResetPasswordModal';
 
 
 const AppContent: React.FC = () => {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout, isPasswordRecovery, closePasswordRecovery } = useAuth();
   const { teams, contestStatus, contestStats } = useContest();
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [analyzingTeam, setAnalyzingTeam] = useState<Team | null>(null);
@@ -86,6 +87,10 @@ const AppContent: React.FC = () => {
       <ChangePasswordModal 
         isOpen={isChangePasswordModalOpen}
         onClose={() => setChangePasswordModalOpen(false)}
+      />
+      <ResetPasswordModal 
+        isOpen={isPasswordRecovery}
+        onClose={closePasswordRecovery}
       />
     </div>
   );
