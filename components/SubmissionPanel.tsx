@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useContest } from '../context/ContestContext';
 import { useToast } from '../context/ToastContext';
@@ -11,7 +11,7 @@ export const SubmissionPanel: React.FC = () => {
   const { teams, tasks, submitSolution, contestStatus } = useContest();
   const { addToast } = useToast();
   const { t } = useTranslation();
-  const [selectedTask, setSelectedTask] = useState<string>(tasks[0]?.id || '');
+  const [selectedTask, setSelectedTask] = useState<string>('');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [fileContent, setFileContent] = useState<string>('');
@@ -21,6 +21,13 @@ export const SubmissionPanel: React.FC = () => {
     if (!user || user.role !== 'contestant') return null;
     return teams.find(team => team.name === user.teamName);
   }, [teams, user]);
+
+  useEffect(() => {
+    // If tasks are available and no task is selected yet, default to the first one.
+    if (tasks.length > 0 && !selectedTask) {
+      setSelectedTask(tasks[0].id);
+    }
+  }, [tasks, selectedTask]);
   
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
