@@ -69,6 +69,7 @@
   "chatbotTitle": "Gemini Assistant",
   "chatbotWelcome": "Hello! Ask me anything about competitive programming or this contest.",
   "chatbotPlaceholder": "Ask something...",
+  "chatbotSystemPrompt": "You are a helpful assistant for a programming competition. Your name is Codey. You should be friendly and provide concise answers related to programming concepts, machine learning models, Python libraries like PyTorch or TensorFlow, and general competition strategies. Do not provide direct solutions to the tasks.",
   "teamDetailTitle": "{teamName} - Details",
   "analysisTitle": "Performance Analysis for {teamName}",
   "poweredByGemini": "Powered by Gemini",

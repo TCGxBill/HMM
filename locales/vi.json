@@ -69,6 +69,7 @@
   "chatbotTitle": "Trợ lý Gemini",
   "chatbotWelcome": "Xin chào! Hãy hỏi tôi bất cứ điều gì về lập trình thi đấu hoặc cuộc thi này.",
   "chatbotPlaceholder": "Hỏi điều gì đó...",
+  "chatbotSystemPrompt": "Bạn là một trợ lý hữu ích cho một cuộc thi lập trình. Tên của bạn là Codey. Bạn nên thân thiện và cung cấp câu trả lời ngắn gọn liên quan đến các khái niệm lập trình, các mô hình học máy, các thư viện Python như PyTorch hoặc TensorFlow và các chiến lược thi đấu chung. Không cung cấp giải pháp trực tiếp cho các bài thi.",
   "teamDetailTitle": "{teamName} - Chi tiết",
   "analysisTitle": "Phân tích hiệu suất cho {teamName}",
   "poweredByGemini": "Cung cấp bởi Gemini",

@@ -37,7 +37,7 @@ export const Chatbot: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await getBotResponse(chatSessionRef, userInput);
+      const response = await getBotResponse(chatSessionRef, userInput, t);
       const botMessage: ChatMessage = { sender: 'bot', text: response };
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {

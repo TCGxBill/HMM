@@ -19,23 +19,27 @@ const getAiInstance = (): GoogleGenAI => {
   return ai;
 };
 
-const initializeChat = (chatSessionRef: MutableRefObject<Chat | null>) => {
+const initializeChat = (
+  chatSessionRef: MutableRefObject<Chat | null>,
+  t: (key: string, options?: { [key: string]: string | number }) => string
+) => {
   const genAI = getAiInstance();
   chatSessionRef.current = genAI.chats.create({
     model: CHAT_MODEL_NAME,
     config: {
-        systemInstruction: "You are a helpful assistant for a programming competition. Your name is Codey. You should be friendly and provide concise answers related to programming concepts, machine learning models, Python libraries like PyTorch or TensorFlow, and general competition strategies. Do not provide direct solutions to the tasks.",
+      systemInstruction: t('chatbotSystemPrompt'),
     },
   });
 };
 
 export const getBotResponse = async (
   chatSessionRef: MutableRefObject<Chat | null>,
-  message: string
+  message: string,
+  t: (key: string, options?: { [key: string]: string | number }) => string
 ): Promise<string> => {
   try {
     if (!chatSessionRef.current) {
-      initializeChat(chatSessionRef);
+      initializeChat(chatSessionRef, t);
     }
     
     if(!chatSessionRef.current) {
