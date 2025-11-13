@@ -72,16 +72,19 @@
   "teamNameLabel": "Team Name",
   "save": "Save",
   "cancel": "Cancel",
-  "confirmReset": "Are you sure you want to reset the contest? This will reset tasks, status, and keys, and reload scoreboard data from the API.",
+  "confirmReset": "Are you sure you want to reset the contest? This will clear all tasks and keys from the database.",
   "confirmDeleteTeam": "Are you sure you want to delete the team \"{teamName}\"? This action cannot be undone.",
+  "confirmDeleteTask": "Are you sure you want to delete task \"{taskName}\"? This will also remove its answer key and cannot be undone.",
   "toastTaskAdded": "Task \"{taskName}\" added.",
   "toastContestStatusUpdated": "Contest status updated to {status}",
   "toastKeyUploaded": "Answer key for {taskId} uploaded successfully!",
   "toastTeamDeleted": "Team \"{teamName}\" has been deleted.",
+  "toastTaskDeleted": "Task \"{taskName}\" has been deleted.",
   "toastTeamUpdated": "Team updated locally! API update not implemented in this version.",
   "toastTaskUpdated": "Task updated!",
   "toastSubmissionReceived": "Submission for {taskId} received! Score: {score}",
   "toastScoreboardUpdated": "Scoreboard updated live!",
+  "toastContestReset": "Contest tasks and keys have been reset.",
   "error": {
     "genericLogin": "Login failed. Please try again.",
     "invalidCredentials": "Invalid username or password.",
@@ -109,6 +112,11 @@
     "findUserToUpdate": "Could not find your record to update score.",
     "deleteTeamGeneral": "Failed to delete team.",
     "findTeamToDelete": "Could not find team to delete.",
-    "adminOnly": "Only admins can perform this action."
+    "adminOnly": "Only admins can perform this action.",
+    "fetchTasks": "Failed to load tasks from the database.",
+    "addTask": "Failed to add new task.",
+    "updateTask": "Failed to update task.",
+    "deleteTask": "Failed to delete task.",
+    "resetContest": "Failed to reset contest tasks."
   }
 }

@@ -28,9 +28,9 @@ const TaskKeyManager: React.FC<{ task: Task }> = ({ task }) => {
         disabled: isUploading,
     });
 
-    const handleVisibilityToggle = () => {
+    const handleVisibilityToggle = async () => {
         const newVisibility = task.keyVisibility === 'private' ? 'public' : 'private';
-        updateTask({ ...task, keyVisibility: newVisibility });
+        await updateTask({ ...task, keyVisibility: newVisibility });
     };
 
     return (
@@ -81,10 +81,9 @@ export const AdminPanel: React.FC = () => {
     const [editingTeam, setEditingTeam] = useState<Team | null>(null);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     
-    const handleAddTask = () => {
+    const handleAddTask = async () => {
         if (newTaskName.trim()) {
-            addTask(newTaskName.trim());
-            addToast(t('toastTaskAdded', { taskName: newTaskName.trim() }), 'success');
+            await addTask(newTaskName.trim());
             setNewTaskName('');
         }
     };
@@ -100,6 +99,12 @@ export const AdminPanel: React.FC = () => {
             deleteTeam(team.id);
         }
     };
+    
+    const handleDeleteTask = (task: Task) => {
+        if (window.confirm(t('confirmDeleteTask', { taskName: task.name }))) {
+            deleteTask(task.id, task.name);
+        }
+    }
 
     const contestStatuses: ContestStatus[] = ['Not Started', 'Live', 'Finished'];
 
@@ -134,7 +139,7 @@ export const AdminPanel: React.FC = () => {
                             <div className="flex-grow"><TaskKeyManager task={task} /></div>
                             <div className="flex items-center space-x-1">
                                 <button onClick={() => setEditingTask(task)} className="p-2 bg-contest-dark-light rounded text-contest-yellow hover:text-yellow-300"><EditIcon className="w-5 h-5"/></button>
-                                <button onClick={() => deleteTask(task.id)} className="p-2 bg-contest-dark-light rounded text-contest-red hover:text-red-400"><DeleteIcon className="w-5 h-5"/></button>
+                                <button onClick={() => handleDeleteTask(task)} className="p-2 bg-contest-dark-light rounded text-contest-red hover:text-red-400"><DeleteIcon className="w-5 h-5"/></button>
                             </div>
                         </div>
                     ))}
@@ -179,8 +184,8 @@ export const AdminPanel: React.FC = () => {
             <TaskEditModal 
                 task={editingTask}
                 onClose={() => setEditingTask(null)}
-                onSave={(task) => {
-                    updateTask(task);
+                onSave={async (task) => {
+                    await updateTask(task);
                     setEditingTask(null);
                     addToast(t('toastTaskUpdated'), 'success');
                 }}

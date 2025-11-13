@@ -79,8 +79,9 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     ```sql
     -- ================================================================================================
     -- PAIC LIVE SCOREBOARD - SCRIPT CÀI ĐẶT SUPABASE HOÀN CHỈNH
-    -- Phiên bản: 1.9
-    -- Mô tả: Cập nhật hàm submit_solution để trả về điểm số, khắc phục lỗi hiển thị thông báo.
+    -- Phiên bản: 2.0
+    -- Mô tả: Thêm bảng `tasks` để quản lý bài thi trong database thay vì local storage.
+    --        Thêm các RPCs để quản lý tasks (`get_tasks_with_status`, `delete_task`, `reset_contest_tasks`).
     -- ================================================================================================
 
     -- 1. BẢNG USERS cho thông tin công khai
@@ -94,7 +95,16 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     );
     ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
-    -- 2. BẢNG SUBMISSIONS
+    -- 2. BẢNG TASKS
+    CREATE TABLE IF NOT EXISTS public.tasks (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        key_visibility TEXT NOT NULL DEFAULT 'private' CHECK (key_visibility IN ('public', 'private')),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+
+    -- 3. BẢNG SUBMISSIONS
     CREATE TABLE IF NOT EXISTS public.submissions (
         id SERIAL PRIMARY KEY,
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -107,7 +117,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     );
     ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
     
-    -- 3. BẢNG TASK KEYS
+    -- 4. BẢNG TASK KEYS
     CREATE TABLE IF NOT EXISTS public.task_keys (
         task_id TEXT PRIMARY KEY,
         key_data JSONB NOT NULL,
@@ -116,10 +126,15 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     );
     ALTER TABLE public.task_keys ENABLE ROW LEVEL SECURITY;
 
-    -- 4. RLS POLICIES (Quy tắc bảo mật hàng)
+    -- 5. RLS POLICIES (Quy tắc bảo mật hàng)
     -- USERS
     CREATE POLICY "Allow public read access to users" ON public.users FOR SELECT USING (true);
     CREATE POLICY "Allow users to insert their own profile" ON public.users FOR INSERT WITH CHECK (auth.uid() = id);
+    -- TASKS
+    CREATE POLICY "Allow public read access to tasks" ON public.tasks FOR SELECT USING (true);
+    CREATE POLICY "Allow admins to manage tasks" ON public.tasks FOR ALL
+        USING (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'))
+        WITH CHECK (auth.uid() IN (SELECT id FROM public.users WHERE role = 'admin'));
     -- SUBMISSIONS
     CREATE POLICY "Allow public read access to submissions" ON public.submissions FOR SELECT USING (true);
     -- TASK_KEYS
@@ -129,16 +144,16 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     CREATE POLICY "PREVENT non-admins from reading keys" ON public.task_keys FOR SELECT
         USING (false);
 
-    -- 5. CÀI ĐẶT REALTIME
+    -- 6. CÀI ĐẶT REALTIME
     DO $$
     BEGIN
-      ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions, public.task_keys;
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.users, public.submissions, public.task_keys, public.tasks;
     EXCEPTION
       WHEN duplicate_object THEN
         -- Publication đã tồn tại, không làm gì cả.
     END $$;
 
-    -- 6. CÁC HÀM SERVER-SIDE (RPC)
+    -- 7. CÁC HÀM SERVER-SIDE (RPC)
 
     -- GET_SCOREBOARD
     CREATE OR REPLACE FUNCTION public.get_scoreboard()
@@ -188,7 +203,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
 
     -- SUBMIT_SOLUTION: Hàm chấm điểm an toàn trên server, trả về điểm số.
     CREATE OR REPLACE FUNCTION public.submit_solution(p_user_id UUID, p_task_id TEXT, p_submission_data JSONB)
-    RETURNS NUMERIC -- SỬA ĐỔI: Trả về kiểu NUMERIC
+    RETURNS NUMERIC
     LANGUAGE plpgsql
     SECURITY DEFINER
     SET search_path = public
@@ -230,12 +245,36 @@ Làm theo các bước sau để thiết lập và chạy dự án.
             best_score = GREATEST(submissions.best_score, v_score),
             history = submissions.history || v_new_attempt,
             updated_at = NOW();
-        RETURN v_score; -- SỬA ĐỔI: Trả về điểm vừa tính
+        RETURN v_score;
     END;
     $$;
 
-    -- DELETE_TASK_KEY
-    CREATE OR REPLACE FUNCTION public.delete_task_key(p_task_id TEXT)
+    -- GET_TASKS_WITH_STATUS
+    CREATE OR REPLACE FUNCTION public.get_tasks_with_status()
+    RETURNS TABLE (
+        id TEXT,
+        name TEXT,
+        "keyVisibility" TEXT,
+        "keyUploaded" BOOLEAN
+    )
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+        RETURN QUERY
+        SELECT
+            t.id,
+            t.name,
+            t.key_visibility AS "keyVisibility",
+            EXISTS(SELECT 1 FROM public.task_keys tk WHERE tk.task_id = t.id) AS "keyUploaded"
+        FROM
+            public.tasks t
+        ORDER BY
+            t.created_at ASC;
+    END;
+    $$;
+    
+    -- DELETE_TASK
+    CREATE OR REPLACE FUNCTION public.delete_task(p_task_id TEXT)
     RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -243,9 +282,11 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     AS $$
     BEGIN
         IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
-            RAISE EXCEPTION 'Permission denied: Only admins can manage task keys.';
+            RAISE EXCEPTION 'Permission denied: Only admins can manage tasks.';
         END IF;
+        DELETE FROM public.tasks WHERE id = p_task_id;
         DELETE FROM public.task_keys WHERE task_id = p_task_id;
+        PERFORM storage.delete_object('task-keys', p_task_id || '.csv');
     END;
     $$;
     
@@ -279,6 +320,29 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
 
+    -- RESET_CONTEST_TASKS
+    CREATE OR REPLACE FUNCTION public.reset_contest_tasks()
+    RETURNS void
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public
+    AS $$
+    DECLARE
+        object_paths TEXT[];
+    BEGIN
+        IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'admin' THEN
+            RAISE EXCEPTION 'Permission denied: Only admins can reset tasks.';
+        END IF;
+        SELECT array_agg(tk.task_id || '.csv')
+        INTO object_paths
+        FROM public.task_keys tk;
+        TRUNCATE public.tasks, public.task_keys RESTART IDENTITY;
+        IF array_length(object_paths, 1) > 0 THEN
+            PERFORM storage.delete_objects('task-keys', object_paths);
+        END IF;
+    END;
+    $$;
+
     -- CLEANUP_ORPHAN_AUTH_USERS
     CREATE OR REPLACE FUNCTION public.cleanup_orphan_auth_users()
     RETURNS TABLE (deleted_user_id UUID, status TEXT)
@@ -299,7 +363,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
     END;
     $$;
 
-    -- 7. TRIGGER TỰ ĐỘNG TẠO PROFILE
+    -- 8. TRIGGER TỰ ĐỘNG TẠO PROFILE
     CREATE OR REPLACE FUNCTION public.handle_new_user()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -317,7 +381,7 @@ Làm theo các bước sau để thiết lập và chạy dự án.
         AFTER INSERT ON auth.users
         FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-    -- 8. HÀM NỘI BỘ CHO EDGE FUNCTION
+    -- 9. HÀM NỘI BỘ CHO EDGE FUNCTION
     CREATE OR REPLACE FUNCTION public.internal_upsert_task_key(p_task_id TEXT, p_key_data JSONB)
     RETURNS void
     LANGUAGE plpgsql
@@ -511,6 +575,9 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
 
 -- Index để tăng tốc join bảng submissions với users
 CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON public.submissions(user_id);
+
+-- Index để tăng tốc sắp xếp tasks
+CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON public.tasks(created_at);
 ```
 
 Bây giờ dự án của bạn đã được thiết lập hoàn chỉnh!

@@ -72,16 +72,19 @@
   "teamNameLabel": "Tên đội",
   "save": "Lưu",
   "cancel": "Hủy",
-  "confirmReset": "Bạn có chắc chắn muốn đặt lại cuộc thi không? Hành động này sẽ đặt lại các bài thi, trạng thái, đáp án và tải lại dữ liệu bảng điểm từ API.",
+  "confirmReset": "Bạn có chắc chắn muốn đặt lại cuộc thi không? Thao tác này sẽ xóa tất cả các bài thi và đáp án khỏi cơ sở dữ liệu.",
   "confirmDeleteTeam": "Bạn có chắc chắn muốn xóa đội \"{teamName}\" không? Không thể hoàn tác hành động này.",
+  "confirmDeleteTask": "Bạn có chắc chắn muốn xóa bài thi \"{taskName}\" không? Thao tác này cũng sẽ xóa đáp án của nó và không thể hoàn tác.",
   "toastTaskAdded": "Đã thêm bài thi \"{taskName}\".",
   "toastContestStatusUpdated": "Trạng thái cuộc thi đã được cập nhật thành {status}",
   "toastKeyUploaded": "Đã tải lên thành công đáp án cho {taskId}!",
   "toastTeamDeleted": "Đã xóa đội \"{teamName}\".",
+  "toastTaskDeleted": "Đã xóa bài thi \"{taskName}\".",
   "toastTeamUpdated": "Đã cập nhật đội cục bộ! Cập nhật API chưa được triển khai trong phiên bản này.",
   "toastTaskUpdated": "Đã cập nhật bài thi!",
   "toastSubmissionReceived": "Đã nhận bài nộp cho {taskId}! Điểm: {score}",
   "toastScoreboardUpdated": "Bảng điểm vừa được cập nhật!",
+  "toastContestReset": "Các bài thi và đáp án của cuộc thi đã được đặt lại.",
   "error": {
     "genericLogin": "Đăng nhập thất bại. Vui lòng thử lại.",
     "invalidCredentials": "Tên đăng nhập hoặc mật khẩu không hợp lệ.",
@@ -109,6 +112,11 @@
     "findUserToUpdate": "Không tìm thấy hồ sơ của bạn để cập nhật điểm.",
     "deleteTeamGeneral": "Xóa đội thất bại.",
     "findTeamToDelete": "Không tìm thấy đội để xóa.",
-    "adminOnly": "Chỉ quản trị viên mới có thể thực hiện hành động này."
+    "adminOnly": "Chỉ quản trị viên mới có thể thực hiện hành động này.",
+    "fetchTasks": "Không thể tải các bài thi từ cơ sở dữ liệu.",
+    "addTask": "Thêm bài thi mới thất bại.",
+    "updateTask": "Cập nhật bài thi thất bại.",
+    "deleteTask": "Xóa bài thi thất bại.",
+    "resetContest": "Đặt lại các bài thi của cuộc thi thất bại."
   }
 }
