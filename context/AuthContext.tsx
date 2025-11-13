@@ -9,6 +9,7 @@ interface AuthContextType {
   login: (username: string, password: string, role: 'admin' | 'contestant') => Promise<User | null>;
   register: (userData: Omit<User, 'id'>) => Promise<User>;
   logout: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -141,6 +142,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return registeredUser;
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    if (!user) {
+        throw new Error('User not authenticated.');
+    }
+
+    // Supabase requires re-authentication to update a password, which we can do by signing in again.
+    // This securely verifies the user knows their current password.
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+    });
+
+    if (signInError) {
+        console.error('Password verification failed:', signInError);
+        throw new Error('error.currentPasswordIncorrect');
+    }
+
+    // If re-authentication is successful, update to the new password.
+    const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+    });
+
+    if (updateError) {
+        console.error('Password update failed:', updateError);
+        throw new Error('error.passwordUpdateFailed');
+    }
+  }, [user]);
+
   const logout = async () => {
     // FIX: The error indicating 'signOut' doesn't exist is likely an initialization issue. The call is correct.
     await supabase.auth.signOut();
@@ -161,7 +190,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, login, register, logout, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

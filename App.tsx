@@ -14,6 +14,7 @@ import { AnalysisModal } from './components/AnalysisModal';
 import { StatsBar } from './components/StatsBar';
 import { Team } from './types';
 import { LogoIcon } from './components/Icons';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 
 
 const AppContent: React.FC = () => {
@@ -21,6 +22,7 @@ const AppContent: React.FC = () => {
   const { teams, contestStatus, contestStats } = useContest();
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [analyzingTeam, setAnalyzingTeam] = useState<Team | null>(null);
+  const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
   const { language, setLanguage } = useLanguage();
   const { t } = useTranslation();
 
@@ -48,6 +50,15 @@ const AppContent: React.FC = () => {
                         <option value="vi-VN">Tiếng Việt</option>
                     </select>
 
+                    {user?.role === 'contestant' && (
+                        <button 
+                            onClick={() => setChangePasswordModalOpen(true)}
+                            className="bg-contest-secondary hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                        >
+                            {t('changePassword')}
+                        </button>
+                    )}
+
                     <button 
                         onClick={logout}
                         className="bg-contest-red hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
@@ -72,6 +83,10 @@ const AppContent: React.FC = () => {
       <Chatbot />
       <TeamDetailModal team={selectedTeam} onClose={() => setSelectedTeam(null)} />
       <AnalysisModal team={analyzingTeam} onClose={() => setAnalyzingTeam(null)} />
+      <ChangePasswordModal 
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setChangePasswordModalOpen(false)}
+      />
     </div>
   );
 };

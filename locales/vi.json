@@ -9,6 +9,7 @@
   "roleAdmin": "Quản trị viên",
   "loginTitle": "Đăng nhập",
   "registerTitle": "Đăng ký",
+  "registerForContestant": "Đăng ký với tư cách Thí sinh",
   "usernamePlaceholder": "Tên đăng nhập",
   "passwordPlaceholder": "Mật khẩu",
   "emailPlaceholder": "Email",
@@ -71,7 +72,13 @@
   "taskNameLabel": "Tên bài thi",
   "teamNameLabel": "Tên đội",
   "save": "Lưu",
+  "saving": "Đang lưu...",
   "cancel": "Hủy",
+  "changePassword": "Đổi mật khẩu",
+  "changePasswordModalTitle": "Thay đổi mật khẩu của bạn",
+  "currentPasswordPlaceholder": "Mật khẩu hiện tại",
+  "newPasswordPlaceholder": "Mật khẩu mới",
+  "confirmNewPasswordPlaceholder": "Xác nhận mật khẩu mới",
   "confirmReset": "Bạn có chắc chắn muốn đặt lại cuộc thi không? Thao tác này sẽ xóa tất cả các bài thi và đáp án khỏi cơ sở dữ liệu.",
   "confirmDeleteTeam": "Bạn có chắc chắn muốn xóa đội \"{teamName}\" không? Không thể hoàn tác hành động này.",
   "confirmDeleteTask": "Bạn có chắc chắn muốn xóa bài thi \"{taskName}\" không? Thao tác này cũng sẽ xóa đáp án của nó và không thể hoàn tác.",
@@ -85,6 +92,8 @@
   "toastSubmissionReceived": "Đã nhận bài nộp cho {taskId}! Điểm: {score}",
   "toastScoreboardUpdated": "Bảng điểm vừa được cập nhật!",
   "toastContestReset": "Các bài thi và đáp án của cuộc thi đã được đặt lại.",
+  "toastPasswordChanged": "Đổi mật khẩu thành công!",
+  "registerSuccessMessage": "Đăng ký thành công! Bây giờ bạn có thể đăng nhập.",
   "error": {
     "genericLogin": "Đăng nhập thất bại. Vui lòng thử lại.",
     "invalidCredentials": "Tên đăng nhập hoặc mật khẩu không hợp lệ.",
@@ -117,6 +126,10 @@
     "addTask": "Thêm bài thi mới thất bại.",
     "updateTask": "Cập nhật bài thi thất bại.",
     "deleteTask": "Xóa bài thi thất bại.",
-    "resetContest": "Đặt lại các bài thi của cuộc thi thất bại."
+    "resetContest": "Đặt lại các bài thi của cuộc thi thất bại.",
+    "passwordMismatch": "Mật khẩu mới không khớp.",
+    "passwordTooShort": "Mật khẩu mới phải có ít nhất 6 ký tự.",
+    "currentPasswordIncorrect": "Mật khẩu hiện tại của bạn không đúng. Vui lòng thử lại.",
+    "passwordUpdateFailed": "Cập nhật mật khẩu thất bại. Vui lòng thử lại."
   }
 }

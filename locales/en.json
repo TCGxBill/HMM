@@ -9,6 +9,7 @@
   "roleAdmin": "Admin",
   "loginTitle": "Login",
   "registerTitle": "Register",
+  "registerForContestant": "Register as a Contestant",
   "usernamePlaceholder": "Username",
   "passwordPlaceholder": "Password",
   "emailPlaceholder": "Email",
@@ -71,7 +72,13 @@
   "taskNameLabel": "Task Name",
   "teamNameLabel": "Team Name",
   "save": "Save",
+  "saving": "Saving...",
   "cancel": "Cancel",
+  "changePassword": "Change Password",
+  "changePasswordModalTitle": "Change Your Password",
+  "currentPasswordPlaceholder": "Current Password",
+  "newPasswordPlaceholder": "New Password",
+  "confirmNewPasswordPlaceholder": "Confirm New Password",
   "confirmReset": "Are you sure you want to reset the contest? This will clear all tasks and keys from the database.",
   "confirmDeleteTeam": "Are you sure you want to delete the team \"{teamName}\"? This action cannot be undone.",
   "confirmDeleteTask": "Are you sure you want to delete task \"{taskName}\"? This will also remove its answer key and cannot be undone.",
@@ -85,6 +92,8 @@
   "toastSubmissionReceived": "Submission for {taskId} received! Score: {score}",
   "toastScoreboardUpdated": "Scoreboard updated live!",
   "toastContestReset": "Contest tasks and keys have been reset.",
+  "toastPasswordChanged": "Password changed successfully!",
+  "registerSuccessMessage": "Registration successful! You can now log in.",
   "error": {
     "genericLogin": "Login failed. Please try again.",
     "invalidCredentials": "Invalid username or password.",
@@ -117,6 +126,10 @@
     "addTask": "Failed to add new task.",
     "updateTask": "Failed to update task.",
     "deleteTask": "Failed to delete task.",
-    "resetContest": "Failed to reset contest tasks."
+    "resetContest": "Failed to reset contest tasks.",
+    "passwordMismatch": "New passwords do not match.",
+    "passwordTooShort": "New password must be at least 6 characters.",
+    "currentPasswordIncorrect": "Your current password is not correct. Please try again.",
+    "passwordUpdateFailed": "Failed to update password. Please try again."
   }
 }
