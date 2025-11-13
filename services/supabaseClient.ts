@@ -1,3 +1,6 @@
+// FIX: Add a triple-slash directive to include Vite's client-side environment variable typings.
+/// <reference types="vite/client" />
+
 import { createClient } from '@supabase/supabase-js';
 
 // The Database generic type is set to 'any' for simplicity.

@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 import usePersistentState from '../hooks/usePersistentState';
-
-// JSON files will be fetched, not imported.
+import enTranslations from '../locales/en.json';
+import viTranslations from '../locales/vi.json';
 
 type Language = 'en-US' | 'vi-VN';
 
@@ -13,48 +13,15 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-// This will act as a cache for the fetched translations
-const loadedTranslations: { [key: string]: any } = {};
+const loadedTranslations: { [key: string]: any } = {
+  'en-US': enTranslations,
+  'vi-VN': viTranslations,
+};
 
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [language, setLanguage] = usePersistentState<Language>('language', 'en-US');
-  const [translationsLoaded, setTranslationsLoaded] = useState(false);
-
-  useEffect(() => {
-    const fetchTranslations = async () => {
-      // Check if already loaded to avoid re-fetching
-      if (Object.keys(loadedTranslations).length > 0) {
-        setTranslationsLoaded(true);
-        return;
-      }
-      try {
-        // Use absolute paths from the root, which is more robust for fetch
-        const [enRes, viRes] = await Promise.all([
-          fetch('/locales/en.json'),
-          fetch('/locales/vi.json')
-        ]);
-
-        if (!enRes.ok || !viRes.ok) {
-          throw new Error('Failed to fetch translation files');
-        }
-
-        loadedTranslations['en-US'] = await enRes.json();
-        loadedTranslations['vi-VN'] = await viRes.json();
-        
-        setTranslationsLoaded(true);
-      } catch (error) {
-        console.error("Error loading translations:", error);
-      }
-    };
-
-    fetchTranslations();
-  }, []); // Empty dependency array ensures this runs only once
 
   const t = useCallback((key: string, options?: { [key: string]: string | number }) => {
-    if (!translationsLoaded) {
-      return key;
-    }
-    
     const languageSet = loadedTranslations[language] || loadedTranslations['en-US'];
     let translation = languageSet;
     
@@ -89,18 +56,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     return translation;
-  }, [language, translationsLoaded]);
-
-  if (!translationsLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-contest-dark text-white font-sans">
-        <div className="flex items-center space-x-3 text-lg">
-          <div className="w-6 h-6 border-4 border-contest-primary border-t-transparent rounded-full animate-spin"></div>
-          <span>Loading translations...</span>
-        </div>
-      </div>
-    );
-  }
+  }, [language]);
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t }}>
