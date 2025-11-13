@@ -10,11 +10,12 @@ let ai: GoogleGenAI | null = null;
 
 const getAiInstance = (): GoogleGenAI => {
   if (!ai) {
-    // FIX: Per @google/genai guidelines, the API key must be obtained from process.env.API_KEY.
-    if (!process.env.API_KEY) {
-      throw new Error("API_KEY environment variable not set");
+    // In a Vite project, environment variables are accessed via `import.meta.env`.
+    const apiKey = (import.meta as any).env.VITE_API_KEY;
+    if (!apiKey) {
+      throw new Error("VITE_API_KEY environment variable not set");
     }
-    ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    ai = new GoogleGenAI({ apiKey });
   }
   return ai;
 };
